@@ -6,7 +6,7 @@ import QuadDisplayCore
 import QuadNativeDisplay
 import OSLog
 
-/// Uses the same signed QuadDesk identity and recovery format as the previous app.
+/// Uses the public QuadDesk identity and the persistent recovery format.
 /// It never starts a capture stream or pointer/keyboard monitor.
 @MainActor
 final class NativeWindowsController: NSObject {
@@ -15,6 +15,12 @@ final class NativeWindowsController: NSObject {
     private var candidates: [Candidate] = []
     private var sources: [(Int, SourceWindow)] = []
     private let permissions = NSTextField(labelWithString: "")
+    private let setupHint = NSTextField(wrappingLabelWithString: "")
+    private let recordingButton = NSButton(title: "1. 画面収録を設定", target: nil, action: nil)
+    private let accessibilityButton = NSButton(title: "2. アクセシビリティを設定", target: nil, action: nil)
+    private let recheckButton = NSButton(title: "状態を再確認", target: nil, action: nil)
+    private var permissionTimer: Timer?
+    private var previouslyGranted = false
     private let log = Logger(subsystem: "io.github.TRN408.QuadDesk", category: "NativeWindows")
     private let store = RecoveryStore(url: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("QuadDesk/window-recovery.json"))
@@ -34,7 +40,7 @@ final class NativeWindowsController: NSObject {
         Access.configureTimeouts()
         host.heading = "4アプリを、Mac自身で縮小する"
         host.setupHeight = 790
-        host.instructions = "選んだ4ウィンドウを広いデスクトップに並べ、内蔵画面へ縮小表示します。\n\nウィンドウを最大化すると通常の表示倍率で1画面に切り替えます。Control + Option + 1〜4でも各画面を拡大できます。4画面へ戻る操作はControl + Option + 0、または格子メニューです。切り替え時に暗転する場合があります。\n\n初期設定は15秒の比較です。作業モードは停止まで続きます。Control + Option + Esc、終了で作業開始前の配置へ戻します。"
+        host.instructions = "選んだ4ウィンドウを広いデスクトップに並べ、内蔵画面へ縮小表示します。\n\nウィンドウを最大化すると通常の表示倍率で1画面に切り替えます。Control + Option + 1〜4でも各画面を拡大できます。4画面へ戻る操作はControl + Option + 0、または格子メニューです。切り替え時に暗転する場合があります。\n\n初期設定は4枠の配置後から15秒のプレビューです。準備にも時間がかかる場合があります。作業モードは停止まで続きます。Control + Option + Esc、終了で作業開始前の配置へ戻します。"
         host.configureSources = { [weak self] stack in self?.configure(stack) }
         host.prepareSources = { [weak self] in
             guard let self else { throw QuadError("設定が終了しました。") }; try await self.prepare()
@@ -52,16 +58,41 @@ final class NativeWindowsController: NSObject {
     }
 
     private func configure(_ stack: NSStackView) {
-        permissions.stringValue = "画面収録：\(CGPreflightScreenCaptureAccess() ? "許可済み" : "未許可")    アクセシビリティ：\(Access.trusted ? "許可済み" : "未許可")"
+        let location = NSTextField(wrappingLabelWithString: "")
+        let path = Bundle.main.bundleURL.standardizedFileURL.path
+        let userApps = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications").path + "/"
+        location.stringValue = path.hasPrefix("/Applications/") || path.hasPrefix(userApps)
+            ? "アプリケーションに配置済みです。次に2つの権限を設定します。"
+            : "先にQuadDesk.appを「アプリケーション」へ移動し、そこから開き直すと権限設定が安定します。"
+        location.font = .systemFont(ofSize: 12)
+        stack.addArrangedSubview(location)
+        location.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         stack.addArrangedSubview(permissions)
+        recordingButton.target = self; recordingButton.action = #selector(requestRecording)
+        accessibilityButton.target = self; accessibilityButton.action = #selector(requestAccessibility)
+        recheckButton.target = self; recheckButton.action = #selector(recheckPermissions)
+        for button in [recordingButton, accessibilityButton, recheckButton] { button.bezelStyle = .rounded }
+        let permissionRow = NSStackView(views: [recordingButton, accessibilityButton, recheckButton])
+        permissionRow.spacing = 8; stack.addArrangedSubview(permissionRow)
+        setupHint.font = .systemFont(ofSize: 12)
+        stack.addArrangedSubview(setupHint)
+        setupHint.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        let folder = NSButton(title: "アプリケーションを開く", target: self, action: #selector(openApplications))
+        let quit = NSButton(title: "終了して権限設定を反映", target: NSApp, action: #selector(NSApplication.terminate(_:)))
+        folder.bezelStyle = .rounded; quit.bezelStyle = .rounded
+        let helpRow = NSStackView(views: [folder, quit]); helpRow.spacing = 8
+        stack.addArrangedSubview(helpRow)
         for position in ["左上", "右上", "左下", "右下"] {
             let label = NSTextField(labelWithString: position)
             label.widthAnchor.constraint(equalToConstant: 42).isActive = true
             let popup = NSPopUpButton(); popup.addItem(withTitle: "ウィンドウを選択")
-            popup.widthAnchor.constraint(equalToConstant: 600).isActive = true
+            popup.widthAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
+            popup.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            popup.target = self; popup.action = #selector(selectionChanged)
             popups.append(popup)
             let row = NSStackView(views: [label, popup]); row.spacing = 10
             stack.addArrangedSubview(row)
+            row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
         let refresh = NSButton(title: "ウィンドウを再読込", target: self, action: #selector(refreshAction))
         let recover = NSButton(title: "前回の配置を復元", target: self, action: #selector(recoverAction))
@@ -70,7 +101,55 @@ final class NativeWindowsController: NSObject {
         stack.addArrangedSubview(row)
         let workMode = NSButton(checkboxWithTitle: "作業モード（15秒制限なし・停止するまで表示）", target: self, action: #selector(modeChanged(_:)))
         stack.addArrangedSubview(workMode)
+        updateSetupState()
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateSetupState() }
+        }
+        permissionTimer = timer; RunLoop.main.add(timer, forMode: .common)
         refreshAction()
+    }
+
+    private func updateSetupState() {
+        let state = SetupReadiness(screenRecording: CGPreflightScreenCaptureAccess(), accessibility: Access.trusted,
+            selections: popups.map { $0.selectedItem?.representedObject as? UInt32 },
+            isBusy: refreshing || restoringSources || preparingSources)
+        permissions.stringValue = "画面収録：\(state.screenRecording ? "許可済み" : "未許可")    アクセシビリティ：\(state.accessibility ? "許可済み" : "未許可")"
+        recordingButton.isEnabled = !state.screenRecording && sources.isEmpty
+        accessibilityButton.isEnabled = !state.accessibility && sources.isEmpty
+        recheckButton.isEnabled = sources.isEmpty && !state.isBusy
+        popups.forEach { $0.isEnabled = state.canChooseWindows && sources.isEmpty }
+        host.sourceRequirementsMet = state.canStart
+        if !state.permissionsGranted {
+            setupHint.stringValue = "画面収録は対象一覧の取得、アクセシビリティは配置・復元に使います。映像の保存・外部送信はありません。設定後は自動で再確認します。未反映なら終了して同じアプリを開き直してください。設定がオンでも未許可の場合は、設定一覧の「Finderに表示」で公開版を確認し、その項目だけを削除して現在のアプリを追加し直してください。"
+        } else if state.isBusy {
+            setupHint.stringValue = "対象ウィンドウを確認しています…"
+        } else if !state.hasFourDistinctWindows {
+            setupHint.stringValue = "権限は確認できました。異なる4つのウィンドウを選ぶと開始できます。最初は15秒プレビューで表示と復元を確認してください。"
+        } else {
+            setupHint.stringValue = "準備できました。初回は15秒プレビューをおすすめします。停止はControl + Option + Esc、または格子メニューです。"
+        }
+        let newlyGranted = state.permissionsGranted && !previouslyGranted
+        previouslyGranted = state.permissionsGranted
+        if newlyGranted && sources.isEmpty { Task { await reloadCandidates() } }
+    }
+
+    @objc private func selectionChanged() { updateSetupState() }
+    @objc private func openApplications() { NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications", isDirectory: true)) }
+    @objc private func requestRecording() {
+        _ = CGRequestScreenCaptureAccess()
+        if !CGPreflightScreenCaptureAccess() {
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+        }
+        updateSetupState()
+    }
+    @objc private func requestAccessibility() {
+        Access.request()
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+        updateSetupState()
+    }
+    @objc private func recheckPermissions() {
+        updateSetupState()
+        if CGPreflightScreenCaptureAccess(), Access.trusted { Task { await reloadCandidates() } }
     }
 
     @objc private func modeChanged(_ sender: NSButton) { host.continuousWork = sender.state == .on }
@@ -82,11 +161,12 @@ final class NativeWindowsController: NSObject {
     private func reloadCandidates(note: String? = nil) async {
         guard !refreshing, !preparingSources, sources.isEmpty else { return }
         guard CGPreflightScreenCaptureAccess(), Access.trusted else {
-            host.setStatus("既存のQuadDeskの画面収録・アクセシビリティ許可を確認してください。表示構成は変更していません。")
+            host.setStatus("上の設定ボタンからQuadDeskの画面収録・アクセシビリティを許可してください。表示構成は変更していません。")
             return
         }
         refreshing = true
-        defer { refreshing = false }
+        updateSetupState()
+        defer { refreshing = false; updateSetupState() }
         let selected = popups.map { $0.selectedItem?.representedObject as? UInt32 }
         let previous = candidates
         do {
@@ -186,8 +266,8 @@ final class NativeWindowsController: NSObject {
             throw QuadError("再読込の完了とQuadDeskの両権限を確認してください。")
         }
         preparingSources = true
-        popups.forEach { $0.isEnabled = false }
-        defer { preparingSources = false; popups.forEach { $0.isEnabled = true } }
+        updateSetupState()
+        defer { preparingSources = false; updateSetupState() }
         if !sources.isEmpty {
             let saved = try store.read()
             guard sources.count == 4, saved.count == 4,
@@ -449,7 +529,7 @@ final class NativeWindowsController: NSObject {
         layoutGeneration &+= 1
         confirmedFullscreenSlot = nil
         layoutTimer?.invalidate(); layoutTimer = nil
-        defer { restoringSources = false }
+        defer { restoringSources = false; updateSetupState() }
         let records: [SavedWindow]
         switch try SourceSessionRepair.plan(stored: store.read(), expected: sources.map { $0.1.saved }, live: []) {
         case .ready: records = []

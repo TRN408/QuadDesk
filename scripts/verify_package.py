@@ -15,8 +15,8 @@ from pathlib import Path
 def check(app):
     info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
     assert info['CFBundleIdentifier'] == 'io.github.TRN408.QuadDesk'
-    assert info['CFBundleShortVersionString'] == '0.7.9'
-    assert info['CFBundleVersion'] == '30'
+    assert info['CFBundleShortVersionString'] == '0.7.10'
+    assert info['CFBundleVersion'] == '32'
     assert info['QuadDeskNativeWindowsPreview'] is True
     subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict', str(app)], check=True)
     signature = subprocess.run(['/usr/bin/codesign', '-d', '--verbose=4', str(app)], capture_output=True, text=True, check=True).stderr
@@ -45,7 +45,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='quaddesk-verify-') as temporary:
         subprocess.run(['/usr/bin/ditto', '-x', '-k', str(archive), temporary], check=True)
         assert hashes == check(Path(temporary) / 'QuadDesk.app')
-    print(json.dumps({'version': '0.7.9', 'verified': True, 'sha256': hashes}, indent=2))
+    print(json.dumps({'version': '0.7.10', 'verified': True, 'sha256': hashes}, indent=2))
 
 
 if __name__ == '__main__':

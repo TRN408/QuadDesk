@@ -19,6 +19,7 @@ let package = Package(
         .executableTarget(name: "QuadDesk", dependencies: ["QuadCore", "QuadInput", "QuadNativeDisplay", "QuadDisplayCore"]),
         .testTarget(name: "QuadCoreTests", dependencies: ["QuadCore"]),
         .testTarget(name: "QuadInputTests", dependencies: ["QuadInput"]),
-        .testTarget(name: "QuadDisplayCoreTests", dependencies: ["QuadDisplayCore"])
+        .testTarget(name: "QuadDisplayCoreTests", dependencies: ["QuadDisplayCore"]),
+        .testTarget(name: "QuadDeskUITests", dependencies: ["QuadDesk", "QuadNativeDisplay"])
     ]
 )

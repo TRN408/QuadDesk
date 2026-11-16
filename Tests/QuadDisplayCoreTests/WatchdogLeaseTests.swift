@@ -20,6 +20,29 @@ final class WatchdogLeaseTests: XCTestCase {
         XCTAssertFalse(lease.expired(at: 124.9))
         XCTAssertTrue(lease.expired(at: 125))
     }
+    func testSlowPreparationLeavesAFullVisiblePreviewPeriod() {
+        var lease = WatchdogLease(mode: .preview, started: 100)
+        XCTAssertTrue(lease.receive("VISIBLE", at: 120))
+        XCTAssertFalse(lease.expired(at: 125))
+        XCTAssertFalse(lease.expired(at: 135)) // Fifteen seconds of visible time.
+        XCTAssertFalse(lease.expired(at: 144.9))
+        XCTAssertTrue(lease.expired(at: 145))
+    }
+    func testPreviewVisibleTransitionCannotRepeatOrReviveAnExpiredLease() {
+        var lease = WatchdogLease(mode: .preview, started: 0)
+        XCTAssertTrue(lease.receive("VISIBLE", at: 24))
+        XCTAssertFalse(lease.receive("VISIBLE", at: 30))
+        XCTAssertFalse(lease.receive("PING", at: 40))
+        XCTAssertTrue(lease.expired(at: 49))
+        var expired = WatchdogLease(mode: .preview, started: 0)
+        XCTAssertFalse(expired.receive("VISIBLE", at: 25))
+        XCTAssertTrue(expired.expired(at: 26))
+    }
+    func testVisibleCommandDoesNotExtendWorkSessions() {
+        var lease = WatchdogLease(mode: .work, started: 0)
+        XCTAssertFalse(lease.receive("VISIBLE", at: 20))
+        XCTAssertTrue(lease.expired(at: 25))
+    }
     func testWorkHasBoundedStartupAndNoRevivalAfterExpiry() {
         var lease = WatchdogLease(mode: .work, started: 100)
         XCTAssertTrue(lease.expired(at: 125))

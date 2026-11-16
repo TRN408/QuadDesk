@@ -5,6 +5,34 @@ import QuadVirtualDisplay
 import QuadDisplayCore
 import OSLog
 
+private final class SetupDocumentView: NSView {
+    override var isFlipped: Bool { true }
+}
+
+/// A width-constrained, vertically scrolling setup form. Kept separate so a
+/// small-display layout can be validated offscreen without creating a window.
+final class SetupScrollView: NSScrollView {
+    init(stack: NSStackView) {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        hasVerticalScroller = true; autohidesScrollers = true; drawsBackground = false
+        let document = SetupDocumentView()
+        document.translatesAutoresizingMaskIntoConstraints = false
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        documentView = document; document.addSubview(stack)
+        NSLayoutConstraint.activate([
+            document.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            document.topAnchor.constraint(equalTo: contentView.topAnchor),
+            document.widthAnchor.constraint(equalTo: contentView.widthAnchor),
+            stack.leadingAnchor.constraint(equalTo: document.leadingAnchor, constant: 28),
+            stack.trailingAnchor.constraint(equalTo: document.trailingAnchor, constant: -28),
+            stack.topAnchor.constraint(equalTo: document.topAnchor, constant: 28),
+            stack.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: -28)
+        ])
+    }
+    required init?(coder: NSCoder) { fatalError("Use init(stack:)") }
+}
+
 final class PreviewWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
@@ -52,6 +80,10 @@ public final class NativeDisplayApp: NSObject, NSApplicationDelegate {
         virtual != nil && helperReady && fourReady && !restoring && !finishingRestore && focusTask == nil
     }
     public var isSingleScreenSession: Bool { focusedSource != nil }
+    public var sourceRequirementsMet = true {
+        didSet { updateStartAvailability(); updateFocusMenu() }
+    }
+    private var displayRequirementsMet = true
     public var continuousWork = false {
         didSet { start?.title = continuousWork ? "4画面で作業を開始" : "表示構成を変更して15秒プレビュー" }
     }
@@ -102,7 +134,7 @@ public final class NativeDisplayApp: NSObject, NSApplicationDelegate {
         root.addItem(appItem); appItem.submenu = menu
         menu.addItem(withTitle: "今すぐ元の表示に戻す", action: #selector(stop), keyEquivalent: "").target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "比較版を終了", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: "QuadDeskを終了", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         NSApp.mainMenu = root
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(systemSymbolName: "square.grid.2x2", accessibilityDescription: "QuadDesk")
@@ -121,34 +153,45 @@ public final class NativeDisplayApp: NSObject, NSApplicationDelegate {
         statusMenu.addItem(withTitle: "終了", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
         item.menu = statusMenu; statusItem = item
 
-        setup = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 740, height: setupHeight),
-                         styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        let available = NSScreen.main?.visibleFrame.size ?? CGSize(width: 1024, height: 768)
+        setup = NSWindow(contentRect: CGRect(x: 0, y: 0, width: min(740, available.width - 64), height: min(setupHeight, available.height - 72)),
+                         styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        setup.contentMinSize = CGSize(width: 600, height: 440)
         setup.title = focusSource == nil ? "QuadDesk — ネイティブ表示の比較" : "QuadDesk — 4画面ワークスペース"
         setup.isReleasedWhenClosed = false
         let title = NSTextField(labelWithString: heading)
         title.font = .systemFont(ofSize: 22, weight: .semibold)
         let explanation = NSTextField(wrappingLabelWithString: instructions ??
-            "広い仮想デスクトップを作り、内蔵画面へ縮小ミラーリングします。比較用の4つの入力画面を表示します。Discordなど実アプリの配置は、この比較の後に検証します。\n\nMac全体のメニューや他のウィンドウも小さくなり、切り替え時に暗転する場合があります。15秒で自動終了します。Control + Option + Escでも停止できます。\n\n復帰用の別プロセスを先に起動し、比較アプリが応答しない場合は25秒で終了・復元を試みます。このMacでの復元動作はまだ未検証です。")
+            "広い仮想デスクトップを作り、内蔵画面へ縮小ミラーリングします。比較用の4つの入力画面を表示します。Discordなど実アプリの配置は、この比較の後に検証します。\n\nMac全体のメニューや他のウィンドウも小さくなり、切り替え時に暗転する場合があります。4枠の配置後から15秒で自動終了します。Control + Option + Escでも停止できます。\n\n復帰用の別プロセスを先に起動し、準備中・表示中の各段階で25秒応答がない場合は終了・復元を試みます。このMacでの復元動作はまだ未検証です。")
         explanation.font = .systemFont(ofSize: 14)
         start = NSButton(title: "表示構成を変更して15秒プレビュー", target: self, action: #selector(begin))
         start.bezelStyle = .rounded
         let problem = QDVirtualDisplayHandle.supportProblem()
-        if !problem.isEmpty { start.isEnabled = false; status.stringValue = "未対応：\(problem)" }
+        if !problem.isEmpty { displayRequirementsMet = false; status.stringValue = "未対応：\(problem)" }
         else if let physical = try? DisplaySnapshot.captureSingleDisplay() {
             status.stringValue = "現在 \(physical.mode.width) × \(physical.mode.height) → 比較 \(physical.mode.width * 2) × \(physical.mode.height * 2)。\nOSの必要な機能を検出済み。表示構成は未変更です。"
-        } else { start.isEnabled = false; status.stringValue = "ミラーリングしていない1画面のMacでのみ比較できます。" }
+        } else { displayRequirementsMet = false; status.stringValue = "ミラーリングしていない1画面のMacでのみ開始できます。" }
         let stack = NSStackView(views: [title, explanation])
         configureSources?(stack)
         stack.addArrangedSubview(start); stack.addArrangedSubview(status)
-        stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 20
+        stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 14
         stack.translatesAutoresizingMaskIntoConstraints = false
-        setup.contentView!.addSubview(stack)
-        NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: setup.contentView!.leadingAnchor, constant: 28),
-            stack.trailingAnchor.constraint(equalTo: setup.contentView!.trailingAnchor, constant: -28),
-            stack.topAnchor.constraint(equalTo: setup.contentView!.topAnchor, constant: 28),
+        let scroll = SetupScrollView(stack: stack)
+        setup.contentView!.addSubview(scroll)
+        NSLayoutConstraint.activate([scroll.leadingAnchor.constraint(equalTo: setup.contentView!.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: setup.contentView!.trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: setup.contentView!.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: setup.contentView!.bottomAnchor),
             explanation.widthAnchor.constraint(equalTo: stack.widthAnchor), status.widthAnchor.constraint(equalTo: stack.widthAnchor)])
         setup.center(); setup.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
         updateFocusMenu()
+        updateStartAvailability()
+    }
+
+    private func updateStartAvailability() {
+        guard let start else { return }
+        start.isEnabled = displayRequirementsMet && sourceRequirementsMet && helper == nil && virtual == nil
+            && !restoring && !finishingRestore && focusTask == nil
     }
 
     private func updateFocusMenu() {
@@ -157,7 +200,7 @@ public final class NativeDisplayApp: NSObject, NSApplicationDelegate {
             item.title = "\(index + 1)：\(name)を1画面へ（⌃⌥\(index + 1)）"
             item.isEnabled = fourScreenVisible
         }
-        resumeItem?.isEnabled = focusedSource != nil && !restoring && !finishingRestore
+        resumeItem?.isEnabled = focusedSource != nil && sourceRequirementsMet && !restoring && !finishingRestore
     }
     @objc private func focusMenu(_ sender: NSMenuItem) { requestFocus(sender.tag) }
     @objc private func resumeFour() {
@@ -185,6 +228,9 @@ public final class NativeDisplayApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func begin() {
+        guard sourceRequirementsMet else {
+            status.stringValue = "権限設定と、異なる4ウィンドウの選択を確認してください。"; return
+        }
         guard helper == nil, virtual == nil, !finishingRestore, !restoring, focusTask == nil else { return }
         start.isEnabled = false
         focusTask = Task { [weak self] in
@@ -192,7 +238,7 @@ public final class NativeDisplayApp: NSObject, NSApplicationDelegate {
             var validated = false
             defer {
                 focusTask = nil
-                if !restoring && !finishingRestore && helper == nil { start.isEnabled = true }
+                updateStartAvailability()
             }
             do {
                 let validation = try await validateSources?() ?? .ready
@@ -247,9 +293,7 @@ public final class NativeDisplayApp: NSObject, NSApplicationDelegate {
             process.executableURL = executable; process.arguments = [activeWork ? "--guard-work" : "--guard-preview"]
             process.standardInput = input; process.standardOutput = output; process.standardError = FileHandle.nullDevice
             helper = process; helperInput = input; helperOutput = output
-            if activeWork {
-                try configureHeartbeatPipe(input.fileHandleForWriting.fileDescriptor)
-            }
+            try configureHeartbeatPipe(input.fileHandleForWriting.fileDescriptor)
             outputBuffer = ""; helperReady = false; restoring = false
             output.fileHandleForReading.readabilityHandler = { [weak self] handle in
                 let data = handle.availableData
@@ -285,7 +329,7 @@ public final class NativeDisplayApp: NSObject, NSApplicationDelegate {
             } else if focusedSource != nil {
                 previewError = error.localizedDescription; stop()
             } else {
-                start.isEnabled = true
+                updateStartAvailability()
                 status.stringValue = "\(error.localizedDescription)\n表示構成は変更していません。"
                 setup.makeKeyAndOrderFront(nil)
             }
@@ -332,13 +376,6 @@ public final class NativeDisplayApp: NSObject, NSApplicationDelegate {
         guard let saved = snapshot, isCurrent(generation) else { return }
         do {
             try registerShortcut()
-            let timer = Timer(timeInterval: NativePreviewPlan.previewSeconds, repeats: false) { [weak self] _ in
-                Task { @MainActor in
-                    guard self?.generation == generation else { return }
-                    self?.stop()
-                }
-            }
-            if !activeWork { deadline = timer; RunLoop.main.add(timer, forMode: .common) }
             virtual = try QDVirtualDisplayHandle(width: UInt(saved.mode.width * 2), height: UInt(saved.mode.height * 2))
             guard let virtual else { throw DisplayFailure("仮想画面を作成できません。") }
             log.notice("Created virtual display=\(virtual.displayID)")
@@ -417,7 +454,20 @@ public final class NativeDisplayApp: NSObject, NSApplicationDelegate {
                 try await presentSources(screen, { [weak self] in self?.isCurrent(generation) == true })
             } else { showDemos(on: screen) }
             guard isCurrent(generation) else { return }
-            guard isCurrent(generation) else { return }
+            if !activeWork {
+                guard let input = helperInput else { throw DisplayFailure("復帰監視への接続がありません。") }
+                // Exactly one phase transition. The independent watchdog still
+                // bounds preparation and the visible period to 25 seconds each.
+                try input.fileHandleForWriting.write(contentsOf: Data("VISIBLE\n".utf8))
+                let timer = Timer(timeInterval: NativePreviewPlan.previewSeconds, repeats: false) { [weak self] _ in
+                    Task { @MainActor in
+                        guard self?.generation == generation else { return }
+                        self?.stop()
+                    }
+                }
+                deadline = timer; RunLoop.main.add(timer, forMode: .common)
+                log.notice("Visible preview countdown started seconds=15")
+            }
             fourReady = true
             log.notice("Preview visible logical=\(screen.frame.width)x\(screen.frame.height) sources=\(self.presentSources == nil ? "demo" : "apps", privacy: .public)")
             updateFocusMenu()
@@ -577,7 +627,7 @@ public final class NativeDisplayApp: NSObject, NSApplicationDelegate {
                     try await focusSource?(index, screen)
                     if !quitAfterRestore && !focusCancelled {
                         focusedSource = index
-                        restoring = false; finishingRestore = false; start.isEnabled = true
+                        restoring = false; finishingRestore = false; updateStartAvailability()
                         setup.orderOut(nil); updateFocusMenu()
                         log.notice("Single source visible index=\(index) normal=\(screen.frame.width)x\(screen.frame.height)")
                         return
@@ -586,7 +636,7 @@ public final class NativeDisplayApp: NSObject, NSApplicationDelegate {
             }
             pendingFocus = nil; focusedSource = nil; removeShortcuts()
             do { try await restoreSources?() } catch { message += "\n" + error.localizedDescription }
-            restoring = false; finishingRestore = false; start.isEnabled = true
+            restoring = false; finishingRestore = false; updateStartAvailability()
             setup.center(); setup.makeKeyAndOrderFront(nil)
             status.stringValue = [previewError, message].compactMap { $0 }.joined(separator: "\n")
             updateFocusMenu()

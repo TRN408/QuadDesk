@@ -39,6 +39,12 @@ Long sessions, sleep/wake and all IME workflows are not yet validated.
 3. Open it and grant Screen Recording and Accessibility in macOS System Settings.
    Restart QuadDesk after permission changes if necessary.
 
+The source for the next candidate (0.7.10) adds permission-setting buttons,
+automatic status checks and start-button gating. See the
+[first-run checklist (Japanese)](docs/FIRST_RUN.md) for that candidate, including
+how to identify the correct app if an older development build has the same name.
+These changes are not yet in the linked 0.7.9-alpha.1 download.
+
 The download is ad hoc signed and **not Apple-notarized**. macOS may block it on
 first launch. Review the source or build locally if you prefer; consult
 [Apple's app-opening guidance](https://support.apple.com/en-us/102445) if you
@@ -46,8 +52,10 @@ choose to trust the downloaded build. Do not disable Gatekeeper or SIP.
 
 ## Use
 
-Select four different normal app windows. The default is a 15-second preview
-(including setup); enable work mode for use until stopped. The app attempts to
+Select four different normal app windows. In the 0.7.10 source candidate, the
+default preview lasts 15 seconds after all four windows are arranged; preparation
+has a separate 25-second watchdog limit. The linked 0.7.9-alpha.1 download counts
+setup within its 15-second preview. Enable work mode for use until stopped. The app attempts to
 leave fullscreen/minimized state before saving each window's normal geometry.
 On stop it restores that normal geometry, not the original fullscreen Space.
 
