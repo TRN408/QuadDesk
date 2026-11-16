@@ -30,7 +30,7 @@ On Apple Silicon, macOS 15.6, one built-in display with original logical
 - Returning to all four windows, preserving the original recovery record through
   those transitions, and ordinary quit restoring all four with zero pending records.
 
-The 0.7.10 candidate has a separate local
+The 0.7.10-alpha.1 release has a separate local
 [public-identity first-run report](FIRST_RUN_RESULTS.md) and
 [manual checklist](FIRST_RUN.md). Its onboarding and work-mode checks were run on
 the same Mac with initially absent public-bundle permissions, not another Mac.
@@ -38,7 +38,7 @@ Build 32 completed an automatically driven four-app preview: 15.012 seconds
 after placement, followed by verified display/window restoration with zero
 remaining recovery records. Preparation took about 17 seconds and complete
 restoration about 14 seconds on this run; display switching is not instantaneous.
-The 0.7.9-alpha.1 downloadable release has not received those changes.
+The downloadable build 32 app is the same app used for that validation.
 The app is not notarized. No all-day, sleep/wake, Intel, external-display or full
 IME certification is claimed. Focus/return shortcuts still require physical
 keyboard validation; the owner confirmed the stop shortcut on build 31.

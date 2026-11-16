@@ -3,7 +3,7 @@
 Four full-size Mac app windows, scaled onto one display. Focus any quadrant to
 read and work at the normal display scale, then return to four windows.
 
-[日本語](README.ja.md) · [Download alpha](https://github.com/TRN408/QuadDesk/releases/tag/v0.7.9-alpha.1) · [MIT license](LICENSE)
+[日本語](README.ja.md) · [Download 0.7.10 alpha](https://github.com/TRN408/QuadDesk/releases/tag/v0.7.10-alpha.1) · [MIT license](LICENSE)
 
 **Free and open source. Experimental alpha, not a finished window manager.**
 
@@ -30,20 +30,22 @@ All menus, the Dock and other windows become smaller in four-window mode because
 the entire desktop changes scale. Switching can briefly blank or move windows.
 Multiple windows of the same app already on different Spaces may not be found.
 Long sessions, sleep/wake and all IME workflows are not yet validated.
+Finder's original window state could not be captured on the tested Mac; choose
+another normal app window for now.
 
 ## Install
 
-1. Download `QuadDesk-0.7.9-alpha.1-macos-arm64.zip` from the
-   [alpha release](https://github.com/TRN408/QuadDesk/releases/tag/v0.7.9-alpha.1).
+1. Download `QuadDesk-0.7.10-alpha.1-macos-arm64.zip` from the
+   [alpha release](https://github.com/TRN408/QuadDesk/releases/tag/v0.7.10-alpha.1).
 2. Extract and move `QuadDesk.app` to Applications before granting permissions.
-3. Open it and grant Screen Recording and Accessibility in macOS System Settings.
-   Restart QuadDesk after permission changes if necessary.
+3. Open it and use the Screen Recording and Accessibility setup buttons to grant
+   both permissions in macOS System Settings. Restart QuadDesk after permission
+   changes if necessary, then check that the app reports both grants.
 
-The source for the next candidate (0.7.10) adds permission-setting buttons,
-automatic status checks and start-button gating. See the
-[first-run checklist (Japanese)](docs/FIRST_RUN.md) for that candidate, including
-how to identify the correct app if an older development build has the same name.
-These changes are not yet in the linked 0.7.9-alpha.1 download.
+Version 0.7.10 adds permission-setting buttons, automatic status checks and
+start-button gating. See the [first-run checklist (Japanese)](docs/FIRST_RUN.md),
+including how to identify the correct app and replace stale permission entries
+after updating an ad hoc signed build.
 
 The download is ad hoc signed and **not Apple-notarized**. macOS may block it on
 first launch. Review the source or build locally if you prefer; consult
@@ -52,10 +54,9 @@ choose to trust the downloaded build. Do not disable Gatekeeper or SIP.
 
 ## Use
 
-Select four different normal app windows. In the 0.7.10 source candidate, the
-default preview lasts 15 seconds after all four windows are arranged; preparation
-has a separate 25-second watchdog limit. The linked 0.7.9-alpha.1 download counts
-setup within its 15-second preview. Enable work mode for use until stopped. The app attempts to
+Select four different normal app windows. The default preview lasts 15 seconds
+after all four windows are arranged; preparation has a separate 25-second
+watchdog limit. Enable work mode for use until stopped. The app attempts to
 leave fullscreen/minimized state before saving each window's normal geometry.
 On stop it restores that normal geometry, not the original fullscreen Space.
 

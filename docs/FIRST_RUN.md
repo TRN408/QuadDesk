@@ -1,7 +1,7 @@
 # 初回導入・表示と復元の確認
 
-この手順は0.7.10の公開版候補向けです。現在のGitHub Releaseは
-0.7.9-alpha.1で、以下のアプリ内設定ボタンはまだ含まれていません。
+この手順は公開試験版0.7.10-alpha.1向けです。
+[GitHub Release](https://github.com/TRN408/QuadDesk/releases/tag/v0.7.10-alpha.1)から取得できます。
 
 ## 1. アプリを配置する
 

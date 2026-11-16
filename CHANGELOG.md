@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.10 (unreleased)
+## 0.7.10-alpha.1 — 2026-11-16
 
 - Add Screen Recording and Accessibility setup buttons, live permission status,
   installation-location guidance and a normal-quit action for permission changes.
@@ -12,6 +12,10 @@
 - Add readiness, setup construction and small-window scrolling regressions
   plus preview watchdog-phase regressions (72 Swift tests total), and a first-run
   verification checklist.
+- Verified on the public app identity on one Apple Silicon Mac: four-app preview
+  for 15.012 seconds after placement, then automatic display/window restoration
+  with zero remaining recovery records. The downloadable app remains ad hoc
+  signed and not notarized.
 
 ## 0.7.9-alpha.1
 

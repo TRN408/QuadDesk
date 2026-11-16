@@ -1,11 +1,12 @@
-# Public-identity onboarding validation — 0.7.10 candidate
+# Public-identity onboarding validation — 0.7.10-alpha.1
 
 Date: 2026-11-16. Environment: Apple Silicon, macOS 15.6 (24G84), one built-in
 display. Public app ID: `io.github.TRN408.QuadDesk`; installed location:
 `/Applications/QuadDesk.app`; app version/build: 0.7.10 / 32. Ad hoc signed.
 
-This is a local test of the next candidate. It is not a claim that the current
-0.7.9-alpha.1 release has the new onboarding controls. The Mac had previously
+This is the local validation record for the build 32 app distributed in
+0.7.10-alpha.1. The downloadable ZIP preserves the tested executables and
+signatures; release documentation changes do not rebuild the app. The Mac had previously
 used a development app with a different bundle ID; it was stopped normally before
 this test. Public-identity permissions initially showed as not granted. This is
 not a second Mac, a fresh macOS account, or a quarantined browser-download test.
