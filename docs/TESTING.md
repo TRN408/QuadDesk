@@ -5,8 +5,10 @@ physical input or display recovery on a different Mac.
 
 ## Automated checks
 
-- 59 Swift tests: layout, window identity, recovery records, capture/input
-  regression behavior, watchdog leases and expansion detection.
+- 72 Swift tests: layout, window identity, recovery records, capture/input
+  regression behavior, watchdog leases, expansion detection, setup readiness,
+  actual setup construction, width-constrained scrolling at 600×300, and bounded
+  preparation/visible preview watchdog phases.
 - 6 Node tests for the optional Electron receiver lifecycle (no Electron runtime needed).
 - Native app/helper builds, ad hoc signatures, ZIP integrity and bundled license notices.
 - A source publication audit excludes personal development history, window
@@ -28,11 +30,19 @@ On Apple Silicon, macOS 15.6, one built-in display with original logical
 - Returning to all four windows, preserving the original recovery record through
   those transitions, and ordinary quit restoring all four with zero pending records.
 
-The public bundle ID and ad hoc package have automated validation; a clean-Mac
-permission flow for this newly named bundle has not been manually completed.
+The 0.7.10-alpha.1 release has a separate local
+[public-identity first-run report](FIRST_RUN_RESULTS.md) and
+[manual checklist](FIRST_RUN.md). Its onboarding and work-mode checks were run on
+the same Mac with initially absent public-bundle permissions, not another Mac.
+Build 32 completed an automatically driven four-app preview: 15.012 seconds
+after placement, followed by verified display/window restoration with zero
+remaining recovery records. Preparation took about 17 seconds and complete
+restoration about 14 seconds on this run; display switching is not instantaneous.
+The downloadable build 32 app is the same app used for that validation.
 The app is not notarized. No all-day, sleep/wake, Intel, external-display or full
-IME certification is claimed. Global keyboard shortcuts still require physical
-keyboard validation; automated app-directed key events are not equivalent.
+IME certification is claimed. Focus/return shortcuts still require physical
+keyboard validation; the owner confirmed the stop shortcut on build 31.
+Automated app-directed key events are not equivalent to physical-key checks.
 
 ## Manual Chrome scale regression
 

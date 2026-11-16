@@ -40,8 +40,8 @@ def main():
         info = {
             'CFBundleExecutable': 'QuadDesk', 'CFBundleIdentifier': 'io.github.TRN408.QuadDesk',
             'CFBundleName': 'QuadDesk', 'CFBundleDisplayName': 'QuadDesk',
-            'CFBundlePackageType': 'APPL', 'CFBundleShortVersionString': '0.7.9',
-            'CFBundleVersion': '30', 'LSMinimumSystemVersion': '14.0',
+            'CFBundlePackageType': 'APPL', 'CFBundleShortVersionString': '0.7.10',
+            'CFBundleVersion': '32', 'LSMinimumSystemVersion': '14.0',
             'NSHighResolutionCapable': True, 'NSPrincipalClass': 'NSApplication',
             'QuadDeskNativeWindowsPreview': True,
             'NSScreenCaptureUsageDescription': 'Enumerate selected windows for the four-app workspace. No video is saved or sent.',
@@ -53,7 +53,7 @@ def main():
         destination.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(['/usr/bin/ditto', '--norsrc', '--noextattr', str(app), str(destination)], check=True)
         subprocess.run(['/usr/bin/ditto', '-c', '-k', '--norsrc', '--noextattr', '--keepParent', str(app), str(destination.with_suffix('.zip'))], check=True)
-    print('Packaged native QuadDesk 0.7.9 (ad hoc; not notarized)' if identity == '-' else 'Packaged with the explicitly selected signing identity')
+    print('Packaged native QuadDesk 0.7.10 (ad hoc; not notarized)' if identity == '-' else 'Packaged with the explicitly selected signing identity')
 
 
 if __name__ == '__main__':
