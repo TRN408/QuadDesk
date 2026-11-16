@@ -16,6 +16,18 @@ The optional Electron fixture requires a separately obtained official runtime
 and its notices. Do not commit runtimes, signing identities, certificates,
 recovery journals, screenshots or personal paths.
 
+For permission-flow validation, finish the candidate build and package checks
+before granting permissions. Install that exact app in Applications and keep its
+executables unchanged throughout manual testing. Rebuilding or re-signing an ad
+hoc candidate can invalidate the existing grants even if System Settings still
+shows enabled switches. Confirm the app's preflight status, not just the switches.
+If macOS logs a code-requirement mismatch, quit the app and replace only its
+identified entries in the two privacy lists with the installed candidate. Never
+reset unrelated apps' permissions or treat an enabled stale entry as a pass.
+Record which build was physically tested; copying a verified ZIP without
+re-signing preserves that candidate's code identity.
+See also [Apple DTS on stable signing and TCC](https://developer.apple.com/forums/thread/730043).
+
 By contributing, you agree that your contributions are licensed under this
 repository's MIT license. Substantial changes should include meaningful regression
 coverage and a clear statement of manual validation limits.

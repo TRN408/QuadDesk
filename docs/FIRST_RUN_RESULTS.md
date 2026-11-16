@@ -29,6 +29,14 @@ restoration verification on build 32 is still pending: the computer-use service
 became unavailable while the same public app's permissions were being reapplied.
 There is no active display session and no remaining recovery journal.
 
+A follow-up diagnosis confirmed the cause of the enabled-but-ungranted state:
+macOS TCC logged a failed code-requirement match for both Screen Recording and
+Accessibility. The saved requirement still identified build 31's ad hoc code
+hash, while the installed executable was build 32. The installed files matched
+the verified build 32 package. Merely enabling the existing rows did not replace
+that saved requirement; only the public app's entries are being removed and
+re-added through System Settings, without modifying the app again.
+
 | Check | Result |
 | --- | --- |
 | Open installed public-identity app | Passed; settings controls visible and instructions wrap |
