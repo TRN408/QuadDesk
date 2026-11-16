@@ -1,0 +1,29 @@
+name: macOS build and tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: swift --version
+      - name: Swift tests and native app build
+        run: bash scripts/validate_native_windows.sh "$PWD/dist/QuadDesk.app"
+      - name: Receiver lifecycle tests
+        run: node --test Tests/Fixtures/ElectronInputProbe/lifecycle.test.cjs
+      - name: Verify package
+        run: python3 scripts/verify_package.py dist/QuadDesk.app
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: QuadDesk-test-build
+          path: dist/QuadDesk.zip
+          retention-days: 7
