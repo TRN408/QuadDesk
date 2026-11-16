@@ -34,10 +34,15 @@ The 0.7.10 candidate has a separate local
 [public-identity first-run report](FIRST_RUN_RESULTS.md) and
 [manual checklist](FIRST_RUN.md). Its onboarding and work-mode checks were run on
 the same Mac with initially absent public-bundle permissions, not another Mac.
+Build 32 completed an automatically driven four-app preview: 15.012 seconds
+after placement, followed by verified display/window restoration with zero
+remaining recovery records. Preparation took about 17 seconds and complete
+restoration about 14 seconds on this run; display switching is not instantaneous.
 The 0.7.9-alpha.1 downloadable release has not received those changes.
 The app is not notarized. No all-day, sleep/wake, Intel, external-display or full
-IME certification is claimed. Global keyboard shortcuts still require physical
-keyboard validation; automated app-directed key events are not equivalent.
+IME certification is claimed. Focus/return shortcuts still require physical
+keyboard validation; the owner confirmed the stop shortcut on build 31.
+Automated app-directed key events are not equivalent to physical-key checks.
 
 ## Manual Chrome scale regression
 
