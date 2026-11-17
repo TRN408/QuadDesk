@@ -122,7 +122,6 @@ final class MobileBrowserUITests: XCTestCase {
         let oldHeight = try await first.webView.evaluateJavaScript("window.innerHeight") as? Int
         let oldZoom = first.webView.pageZoom
         let oldNativeHeight = first.webView.bounds.height
-        let oldLogicalContentHeight = first.webContentSlot.bounds.height
         let logicalSize = first.frame.size
         host.frame.size = CGSize(width: 1440, height: 800)
         host.needsLayout = true; host.layoutSubtreeIfNeeded()
@@ -130,10 +129,14 @@ final class MobileBrowserUITests: XCTestCase {
         let resizedHeight = try await first.webView.evaluateJavaScript("window.innerHeight") as? Int
         XCTAssertEqual(resizedWidth, firstWidth)
         XCTAssertEqual(first.frame.size, logicalSize)
-        // The logical content height stays fixed. WebKit aligns its displayed
-        // viewport to device pixels: at a small zoom, one display pixel spans
-        // several CSS pixels, especially on a 1x CI display.
-        XCTAssertEqual(first.webContentSlot.bounds.height, oldLogicalContentHeight, accuracy: 0.01)
+        // The logical canvas above stays fixed, while AppKit aligns native
+        // controls and WebKit's viewport to display pixels. At a small zoom,
+        // one display point spans several CSS pixels. Bound the combined
+        // rounding of both layouts in display space instead of fixing a CSS
+        // tolerance to this development Mac's Retina scale.
+        let roundingBudget = 1 / oldZoom + 1 / first.webView.pageZoom
+        XCTAssertEqual(Double(try XCTUnwrap(resizedHeight)), Double(try XCTUnwrap(oldHeight)),
+                       accuracy: roundingBudget)
         XCTAssertEqual(Double(try XCTUnwrap(oldHeight)) * oldZoom, oldNativeHeight, accuracy: 1)
         XCTAssertEqual(Double(try XCTUnwrap(resizedHeight)) * first.webView.pageZoom,
                        first.webView.bounds.height, accuracy: 1)
