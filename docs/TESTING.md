@@ -5,7 +5,7 @@ physical input or display recovery on a different Mac.
 
 ## Automated checks
 
-- 80 Swift tests: layout, window identity, recovery records, capture/input
+- 86 Swift tests: layout, window identity, recovery records, capture/input
   regression behavior, watchdog leases, expansion detection, setup readiness,
   actual setup construction, width-constrained scrolling at 600×300, and bounded
   preparation/visible preview watchdog phases.
@@ -79,3 +79,19 @@ Check each of the following in a browser-only app instance:
 Real website compatibility, authentication providers, restart-persistent logins,
 physical IME operation, long sessions and sleep/wake require separate manual
 checks. The mobile user agent does not prove iOS or touch compatibility.
+
+
+## Sixteen-pane resource regression
+
+The performance branch keeps all sixteen loaded pages alive. Tests verify their
+independent timers/content, a native-sized WebKit surface with the original CSS
+viewport/media queries, no WebKit allocation for sixteen empty cells, no repeated
+placement for unchanged geometry, and a two-slot URL navigation queue with
+replacement/cancellation/stale completion handling. Audio/video require a user
+play action. The command line accepts repeated `--browser-url URL` arguments to
+restore explicitly supplied URLs; it does not scrape browser profiles or save a
+browsing history.
+
+`QUADDESK_BUILD_JOBS=2` bounds build concurrency for this 8 GB development Mac.
+A smaller render target is not a promise that JavaScript heaps shrink equally:
+real websites, video policy, user content and other running apps still matter.

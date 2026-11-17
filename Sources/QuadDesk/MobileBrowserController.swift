@@ -14,6 +14,7 @@ final class MobileBrowserController: NSObject, NSWindowDelegate {
     private let mode = NSPopUpButton()
     private let dataStore: WKWebsiteDataStore
     private let paneLimit: Int
+    private let navigationQueue = BrowserNavigationQueue()
 
     init(dataStore: WKWebsiteDataStore? = nil, paneLimit: Int = BrowserGridPlan.maximumPanes) {
         self.dataStore = dataStore ?? .default()
@@ -91,12 +92,23 @@ final class MobileBrowserController: NSObject, NSWindowDelegate {
         }
         pane.onNewWindow = { [weak self] config in self?.addPane(configuration: config)?.webView }
         pane.onViewportChanged = { [weak self] in self?.grid.needsLayout = true }
+        pane.onLoadRequested = { [weak self, weak pane] url in
+            guard let self, let pane else { return }
+            self.navigationQueue.enqueue(key: pane.id, start: { [weak pane] finished in
+                guard let pane else { finished(); return }
+                pane.startScheduledLoad(url, finished: finished)
+            }, cancel: { [weak pane] in pane?.cancelScheduledLoad() })
+        }
+        pane.onLoadCancelled = { [weak self, weak pane] in
+            guard let pane else { return }; self?.navigationQueue.cancel(key: pane.id)
+        }
         panes.append(pane); grid.add(pane); updateControls(plan: grid.plan)
         return pane
     }
 
     func removePane(_ pane: MobileBrowserPane) {
         guard panes.contains(where: { $0 === pane }) else { return }
+        navigationQueue.cancel(key: pane.id)
         pane.dispose(); grid.remove(pane); pane.removeFromSuperview()
         panes.removeAll { $0 === pane }; updateControls(plan: grid.plan)
     }
@@ -119,10 +131,17 @@ final class MobileBrowserController: NSObject, NSWindowDelegate {
     private func updateControls(plan: BrowserGridPlan) {
         let text = "\(plan.rows)段 × \(plan.columns)列 · \(Int(plan.scale * 100))% · \(panes.count)画面"
         if count.stringValue != text { count.stringValue = text }
-        addButton.isEnabled = panes.count < paneLimit
+        let canAdd = panes.count < paneLimit
+        if addButton.isEnabled != canAdd { addButton.isEnabled = canAdd }
+    }
+    func loadInitialURLs(_ urls: [URL]) {
+        let urls = Array(urls.prefix(paneLimit))
+        while panes.count < urls.count { _ = addPane() }
+        for (pane, url) in zip(panes, urls) { pane.load(url) }
     }
     func windowWillClose(_ notification: Notification) { close() }
     func close() {
+        navigationQueue.cancelAll()
         for pane in panes { pane.dispose(); grid.remove(pane); pane.removeFromSuperview() }
         panes.removeAll()
         window?.delegate = nil; window?.orderOut(nil); window = nil
@@ -131,7 +150,34 @@ final class MobileBrowserController: NSObject, NSWindowDelegate {
 
 @MainActor
 final class MobileBrowserPane: NSView, WKNavigationDelegate, WKUIDelegate {
-    let webView: WKWebView
+    let id = UUID()
+    private var waitingForLoad = false
+    private var scheduledNavigation: WKNavigation?
+    private var loadFinished: (() -> Void)?
+    var onLoadRequested: ((URL) -> Void)?
+    var onLoadCancelled: (() -> Void)?
+    // Blank cells carry native controls only; WebKit starts when a page is opened.
+    private(set) var activeWebView: WKWebView?
+    private let webConfiguration: WKWebViewConfiguration
+    let webContentSlot = NSView()
+    var webView: WKWebView {
+        if let activeWebView { return activeWebView }
+        precondition(!disposed, "Cannot open a disposed pane")
+        let view = WKWebView(frame: .zero, configuration: webConfiguration)
+        activeWebView = view
+        view.navigationDelegate = self; view.uiDelegate = self
+        view.allowsBackForwardNavigationGestures = true
+        view.customUserAgent = mobileUserAgent
+        observations = [view.observe(\.canGoBack, options: [.initial, .new]) { [weak self] _, _ in MainActor.assumeIsolated { self?.updateNavigation() } },
+                        view.observe(\.canGoForward, options: [.new]) { [weak self] _, _ in MainActor.assumeIsolated { self?.updateNavigation() } },
+                        view.observe(\.isLoading, options: [.new]) { [weak self] _, _ in MainActor.assumeIsolated { self?.updateNavigation() } },
+                        view.observe(\.url, options: [.new]) { [weak self] _, _ in MainActor.assumeIsolated { self?.syncAddress() } },
+                        view.observe(\.title, options: [.new]) { [weak self] view, _ in
+                            MainActor.assumeIsolated { self?.heading.stringValue = view.title ?? "新しいタブ" }
+                        }]
+        onWebViewCreated?(view)
+        return view
+    }
     let address = NSTextField()
     private(set) var viewport: MobileViewport = .standard
     let status = NSTextField(labelWithString: "URLを入力して開く")
@@ -143,17 +189,20 @@ final class MobileBrowserPane: NSView, WKNavigationDelegate, WKUIDelegate {
     private var observations: [NSKeyValueObservation] = []
     var onClose: (() -> Void)?
     var onViewportChanged: (() -> Void)?
+    var onWebViewCreated: ((WKWebView) -> Void)?
+    var onContentLayout: (() -> Void)?
     var onNewWindow: ((WKWebViewConfiguration) -> WKWebView?)?
     private var disposed = false
 
     init(configuration: WKWebViewConfiguration) {
-        webView = WKWebView(frame: .zero, configuration: configuration)
+        // Require an explicit user gesture for audio and video, including muted
+        // autoplay. This avoids sixteen simultaneous video decoders.
+        configuration.mediaTypesRequiringUserActionForPlayback = .all
+        webConfiguration = configuration
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true; layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
         layer?.cornerRadius = 0
-        webView.navigationDelegate = self; webView.uiDelegate = self
-        webView.allowsBackForwardNavigationGestures = true
         heading.font = .systemFont(ofSize: 12, weight: .medium)
         heading.lineBreakMode = .byTruncatingTail
         heading.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -175,7 +224,7 @@ final class MobileBrowserPane: NSView, WKNavigationDelegate, WKUIDelegate {
         status.lineBreakMode = .byTruncatingTail
         empty.alignment = .center; empty.textColor = .secondaryLabelColor
         empty.font = .systemFont(ofSize: 14)
-        for view in [header, address, controls, webView, status, empty] {
+        for view in [header, address, controls, webContentSlot, status, empty] {
             view.translatesAutoresizingMaskIntoConstraints = false; addSubview(view)
         }
         width = widthAnchor.constraint(equalToConstant: CGFloat(viewport.rawValue))
@@ -186,22 +235,16 @@ final class MobileBrowserPane: NSView, WKNavigationDelegate, WKUIDelegate {
             address.leadingAnchor.constraint(equalTo: header.leadingAnchor), address.trailingAnchor.constraint(equalTo: header.trailingAnchor),
             controls.topAnchor.constraint(equalTo: address.bottomAnchor, constant: 6), controls.leadingAnchor.constraint(equalTo: header.leadingAnchor),
             controls.trailingAnchor.constraint(lessThanOrEqualTo: header.trailingAnchor),
-            webView.topAnchor.constraint(equalTo: controls.bottomAnchor, constant: 8),
-            webView.leadingAnchor.constraint(equalTo: leadingAnchor), webView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            webView.bottomAnchor.constraint(equalTo: status.topAnchor, constant: -6),
+            webContentSlot.topAnchor.constraint(equalTo: controls.bottomAnchor, constant: 8),
+            webContentSlot.leadingAnchor.constraint(equalTo: leadingAnchor), webContentSlot.trailingAnchor.constraint(equalTo: trailingAnchor),
+            webContentSlot.bottomAnchor.constraint(equalTo: status.topAnchor, constant: -6),
             status.leadingAnchor.constraint(equalTo: header.leadingAnchor), status.trailingAnchor.constraint(equalTo: header.trailingAnchor),
             status.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
-            empty.centerYAnchor.constraint(equalTo: webView.centerYAnchor),
+            empty.centerYAnchor.constraint(equalTo: webContentSlot.centerYAnchor),
             empty.leadingAnchor.constraint(equalTo: header.leadingAnchor), empty.trailingAnchor.constraint(equalTo: header.trailingAnchor)
         ])
         applyViewport(.standard, reloadPage: false)
-        observations = [webView.observe(\.canGoBack, options: [.initial, .new]) { [weak self] _, _ in MainActor.assumeIsolated { self?.updateNavigation() } },
-                        webView.observe(\.canGoForward, options: [.new]) { [weak self] _, _ in MainActor.assumeIsolated { self?.updateNavigation() } },
-                        webView.observe(\.isLoading, options: [.new]) { [weak self] _, _ in MainActor.assumeIsolated { self?.updateNavigation() } },
-                        webView.observe(\.url, options: [.new]) { [weak self] _, _ in MainActor.assumeIsolated { self?.syncAddress() } },
-                        webView.observe(\.title, options: [.new]) { [weak self] view, _ in
-                            MainActor.assumeIsolated { self?.heading.stringValue = view.title ?? "新しいタブ" }
-                        }]
+        updateNavigation()
     }
     required init?(coder: NSCoder) { fatalError("Use init(configuration:)") }
 
@@ -215,9 +258,19 @@ final class MobileBrowserPane: NSView, WKNavigationDelegate, WKUIDelegate {
         button.widthAnchor.constraint(equalToConstant: 24).isActive = true
         button.heightAnchor.constraint(equalToConstant: 24).isActive = true
     }
+    override func layout() {
+        super.layout()
+        onContentLayout?()
+    }
+    private var mobileUserAgent: String? {
+        viewport.isMobile
+            ? "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+            : nil
+    }
     private func updateNavigation() {
-        back.isEnabled = webView.canGoBack; forward.isEnabled = webView.canGoForward
-        reload.image = NSImage(systemSymbolName: webView.isLoading ? "xmark" : "arrow.clockwise", accessibilityDescription: "再読み込み／停止")
+        back.isEnabled = activeWebView?.canGoBack == true
+        forward.isEnabled = activeWebView?.canGoForward == true
+        reload.image = NSImage(systemSymbolName: (waitingForLoad || activeWebView?.isLoading == true) ? "xmark" : "arrow.clockwise", accessibilityDescription: "再読み込み／停止")
     }
     @objc func openAddress() {
         guard let url = BrowserAddress.resolve(address.stringValue) else {
@@ -229,25 +282,46 @@ final class MobileBrowserPane: NSView, WKNavigationDelegate, WKUIDelegate {
     func load(_ url: URL) {
         guard BrowserAddress.allowsNavigation(to: url), !disposed else { return }
         address.stringValue = url.absoluteString; empty.isHidden = true
-        webView.load(URLRequest(url: url))
+        if let onLoadRequested {
+            waitingForLoad = true; status.stringValue = "読み込み待ち…"; updateNavigation()
+            onLoadRequested(url)
+        } else { startScheduledLoad(url, finished: {}) }
+    }
+    func startScheduledLoad(_ url: URL, finished: @escaping () -> Void) {
+        guard !disposed else { finished(); return }
+        waitingForLoad = false; loadFinished = finished
+        scheduledNavigation = webView.load(URLRequest(url: url, timeoutInterval: 30))
+        updateNavigation()
+        if scheduledNavigation == nil { completeScheduledLoad() }
+    }
+    func cancelScheduledLoad() {
+        scheduledNavigation = nil; loadFinished = nil
+        activeWebView?.stopLoading(); updateNavigation()
+    }
+    private func completeScheduledLoad(_ navigation: WKNavigation? = nil) {
+        if let navigation, navigation !== scheduledNavigation { return }
+        scheduledNavigation = nil
+        let finished = loadFinished; loadFinished = nil; finished?()
     }
     func applyViewport(_ viewport: MobileViewport, reloadPage: Bool = true) {
         self.viewport = viewport; width.constant = CGFloat(viewport.rawValue)
         mode.selectItem(at: MobileViewport.allCases.firstIndex(of: viewport)!)
-        // This requests mobile site variants. It is still macOS WebKit, not an iPhone runtime.
-        webView.customUserAgent = viewport.isMobile
-            ? "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
-            : nil
+        if let view = activeWebView { view.customUserAgent = mobileUserAgent }
         onViewportChanged?()
-        if reloadPage, webView.url != nil { webView.reload() }
+        if reloadPage, let view = activeWebView, view.url != nil { view.reload() }
     }
     @objc private func viewportChanged() { applyViewport(MobileViewport.allCases[mode.indexOfSelectedItem]) }
     @objc private func closeAction() { onClose?() }
-    @objc private func goBack() { webView.goBack() }
-    @objc private func goForward() { webView.goForward() }
+    @objc private func goBack() { activeWebView?.goBack() }
+    @objc private func goForward() { activeWebView?.goForward() }
     @objc private func reloadOrStop() {
-        if webView.isLoading { webView.stopLoading(); status.stringValue = "読み込みを停止しました。" }
-        else { webView.reload() }
+        if waitingForLoad {
+            waitingForLoad = false; onLoadCancelled?(); updateNavigation()
+            status.stringValue = "読み込みを停止しました。"; return
+        }
+        guard let view = activeWebView else { return }
+        if view.isLoading { view.stopLoading(); status.stringValue = "読み込みを停止しました。" }
+        else { view.reload() }
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -270,18 +344,21 @@ final class MobileBrowserPane: NSView, WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) { syncAddress() }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         syncAddress(); status.stringValue = "\(viewport.rawValue) px · \(viewport.isMobile ? "モバイル表示" : "PC表示")"
+        completeScheduledLoad(navigation)
     }
     private func syncAddress() {
         // Do not replace a URL while the user is typing a new one.
-        if address.currentEditor() == nil { address.stringValue = webView.url?.absoluteString ?? "" }
+        if address.currentEditor() == nil { address.stringValue = activeWebView?.url?.absoluteString ?? "" }
     }
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { show(error) }
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { show(error) }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { show(error); completeScheduledLoad(navigation) }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { show(error); completeScheduledLoad(navigation) }
     private func show(_ error: Error) {
         guard (error as NSError).code != NSURLErrorCancelled else { return }
         status.stringValue = "読み込めません：\(error.localizedDescription)"; status.toolTip = status.stringValue
     }
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { status.stringValue = "ページが終了しました。再読み込みしてください。" }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        status.stringValue = "ページが終了しました。再読み込みしてください。"; completeScheduledLoad()
+    }
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         guard let url = navigationAction.request.url, BrowserAddress.allowsNavigation(to: url) else { return nil }
         guard let view = onNewWindow?(configuration) else {
@@ -323,21 +400,27 @@ final class MobileBrowserPane: NSView, WKNavigationDelegate, WKUIDelegate {
     }
 
     func dispose() {
-        disposed = true; observations.removeAll()
-        webView.stopLoading(); webView.navigationDelegate = nil; webView.uiDelegate = nil
-        webView.removeFromSuperview(); onClose = nil; onNewWindow = nil; onViewportChanged = nil
+        disposed = true; waitingForLoad = false; cancelScheduledLoad(); observations.removeAll()
+        activeWebView?.stopLoading(); activeWebView?.navigationDelegate = nil; activeWebView?.uiDelegate = nil
+        activeWebView?.removeFromSuperview()
+        onClose = nil; onNewWindow = nil; onViewportChanged = nil
+        onWebViewCreated = nil; onContentLayout = nil
+        onLoadRequested = nil; onLoadCancelled = nil
     }
 }
 
 @MainActor
 final class MobileBrowserApp: NSObject, NSApplicationDelegate {
     let browser = MobileBrowserController()
+    private let initialURLs: [URL]
+    init(initialURLs: [URL] = []) { self.initialURLs = initialURLs; super.init() }
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         let root = NSMenu(), item = NSMenuItem(), menu = NSMenu()
         root.addItem(item); item.submenu = menu
         menu.addItem(withTitle: "QuadDeskを終了", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         NSApp.mainMenu = root; browser.installMenu(); browser.show()
+        browser.loadInitialURLs(initialURLs)
     }
     func applicationWillTerminate(_ notification: Notification) { browser.close() }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

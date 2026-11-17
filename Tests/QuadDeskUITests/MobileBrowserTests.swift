@@ -25,6 +25,65 @@ final class MobileBrowserUITests: XCTestCase {
     }
 
     @MainActor
+    func testSixteenBlankPanesDoNotStartWebKitAndUnchangedLayoutsAreSkipped() throws {
+        _ = NSApplication.shared
+        let browser = MobileBrowserController(dataStore: .nonPersistent())
+        defer { browser.close() }
+        browser.grid.frame = CGRect(x: 0, y: 0, width: 1440, height: 810)
+        for _ in 0..<16 { XCTAssertNotNil(browser.addPane()) }
+        browser.grid.layoutSubtreeIfNeeded()
+        XCTAssertEqual(browser.grid.tiles.count, 16)
+        XCTAssertTrue(browser.panes.allSatisfy { $0.activeWebView == nil })
+        let counts = browser.grid.tiles.map(\.placementCount)
+        for _ in 0..<20 {
+            browser.grid.needsLayout = true
+            browser.grid.layoutSubtreeIfNeeded()
+        }
+        XCTAssertEqual(browser.grid.tiles.map(\.placementCount), counts)
+        let first = try XCTUnwrap(browser.panes.first)
+        let opened = first.webView
+        XCTAssertNotNil(first.activeWebView)
+        XCTAssertTrue(browser.panes.dropFirst().allSatisfy { $0.activeWebView == nil })
+        XCTAssertEqual(opened.configuration.mediaTypesRequiringUserActionForPlayback, .all)
+        XCTAssertLessThan(opened.frame.width, CGFloat(first.viewport.rawValue))
+        XCTAssertGreaterThan(opened.frame.height, 0)
+    }
+
+    @MainActor
+    func testAllSixteenLoadedPagesContinueUpdatingIndependently() async throws {
+        _ = NSApplication.shared
+        let browser = MobileBrowserController(dataStore: .nonPersistent())
+        defer { browser.close() }
+        browser.grid.frame = CGRect(x: 0, y: 0, width: 1440, height: 810)
+        for _ in 0..<16 { _ = browser.addPane() }
+        browser.grid.layoutSubtreeIfNeeded()
+        for (index, pane) in browser.panes.enumerated() {
+            pane.webView.loadHTMLString("<meta name='viewport' content='width=device-width,initial-scale=1'><input id='entry' value='tab-\(index)'><script>window.ticks=0;setInterval(()=>window.ticks++,100)</script>", baseURL: nil)
+        }
+        for _ in 0..<120 {
+            var ready = true
+            for pane in browser.panes {
+                if (try? await pane.webView.evaluateJavaScript("window.ticks > 0")) as? Bool != true { ready = false; break }
+            }
+            if ready { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        var before: [Int] = []
+        for (index, pane) in browser.panes.enumerated() {
+            let value = try await pane.webView.evaluateJavaScript("document.getElementById('entry').value") as? String
+            XCTAssertEqual(value, "tab-\(index)")
+            let ticks = try await pane.webView.evaluateJavaScript("window.ticks") as? Int
+            before.append(try XCTUnwrap(ticks))
+        }
+        try await Task.sleep(nanoseconds: 1_500_000_000)
+        for (index, pane) in browser.panes.enumerated() {
+            let ticks = try await pane.webView.evaluateJavaScript("window.ticks") as? Int
+            XCTAssertGreaterThan(try XCTUnwrap(ticks), before[index], "Tab \(index) stopped updating")
+        }
+        XCTAssertEqual(browser.panes.filter { $0.activeWebView != nil }.count, 16)
+    }
+
+    @MainActor
     func testTwoLivePagesAtMobileWidthsWithIndependentContentAndSharedCookies() async throws {
         _ = NSApplication.shared
         let browser = MobileBrowserController(dataStore: .nonPersistent())
@@ -51,8 +110,11 @@ final class MobileBrowserUITests: XCTestCase {
             if ready == true && ready2 == true { break }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
-        XCTAssertEqual(first.webView.frame.width, 320, accuracy: 1)
-        XCTAssertEqual(second.webView.frame.width, 430, accuracy: 1)
+        // Physical WebKit views now match the small displayed rectangles. The
+        // CSS width below must remain the original mobile size nonetheless.
+        XCTAssertLessThan(first.webView.frame.width, 320)
+        XCTAssertLessThan(second.webView.frame.width, 430)
+        XCTAssertEqual(first.webView.bounds.width, first.webView.frame.width, accuracy: 0.001)
         let firstWidth = try await first.webView.evaluateJavaScript("window.innerWidth") as? Int
         let secondWidth = try await second.webView.evaluateJavaScript("window.innerWidth") as? Int
         XCTAssertEqual(firstWidth, 320)
@@ -74,7 +136,8 @@ final class MobileBrowserUITests: XCTestCase {
         let target = host.hitTest(point)
         XCTAssertTrue(target === first.webView || target?.isDescendant(of: first.webView) == true,
                       "hit=\(String(describing: target)) point=\(point) tile=\(tile.frame)/\(tile.bounds) pane=\(first.frame) web=\(first.webView.frame)")
-        XCTAssertLessThan(tile.frame.width, tile.bounds.width)
+        XCTAssertEqual(tile.frame.width, tile.bounds.width, accuracy: 0.001)
+        XCTAssertLessThan(tile.frame.width, first.frame.width)
         let responsive = try await first.webView.evaluateJavaScript("matchMedia('(max-width:350px)').matches") as? Bool
         XCTAssertEqual(responsive, true)
         let ua = try await first.webView.evaluateJavaScript("navigator.userAgent") as? String

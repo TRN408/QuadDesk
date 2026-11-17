@@ -1,32 +1,63 @@
 import AppKit
+import WebKit
 import QuadCore
 
-/// An AppKit coordinate transform keeps both WebKit's CSS viewport and native
-/// mouse/text input intact. No page zoom, screenshots or synthetic events.
+private final class BrowserChromeCanvas: NSView {
+    override var isFlipped: Bool { true }
+}
+
+/// Native chrome is transformed; WebKit is a sibling at the actual display
+/// size. Native pageZoom keeps its CSS viewport while avoiding a full-size
+/// Retina web surface that would subsequently be downsampled.
 @MainActor
 final class ScaledBrowserTile: NSView {
     let pane: MobileBrowserPane
+    private let chrome = BrowserChromeCanvas()
+    private var lastFrame: CGRect?
+    private var lastViewport: Int?
+    private(set) var placementCount = 0
     override var isFlipped: Bool { true }
 
     init(pane: MobileBrowserPane) {
         self.pane = pane
         super.init(frame: .zero)
-        // The fixed canvas must not take its height from Auto Layout's physical
-        // frame. Only the outer host scales; all inner geometry stays logical.
         pane.translatesAutoresizingMaskIntoConstraints = true
         pane.autoresizingMask = []
-        addSubview(pane)
+        addSubview(chrome); chrome.addSubview(pane)
+        pane.onWebViewCreated = { [weak self] view in
+            guard let self else { return }
+            view.autoresizingMask = []
+            self.addSubview(view)
+            self.placeWebContent()
+        }
+        pane.onContentLayout = { [weak self] in self?.placeWebContent() }
+        if let view = pane.activeWebView { addSubview(view) }
     }
     required init?(coder: NSCoder) { fatalError("Use init(pane:)") }
 
     func place(in frame: CGRect) {
+        let width = pane.viewport.rawValue
+        guard lastFrame != frame || lastViewport != width else { return }
+        lastFrame = frame; lastViewport = width; placementCount += 1
         self.frame = frame
-        let width = CGFloat(pane.viewport.rawValue)
-        let logical = CGSize(width: width, height: width * BrowserGridPlan.referenceSize.height / BrowserGridPlan.referenceSize.width)
-        setBoundsSize(logical)
+        chrome.frame = bounds
+        let logical = CGSize(width: CGFloat(width), height: CGFloat(width) * BrowserGridPlan.referenceSize.height / BrowserGridPlan.referenceSize.width)
+        chrome.setBoundsSize(logical)
         pane.frame = CGRect(origin: .zero, size: logical)
         pane.needsLayout = true
         pane.layoutSubtreeIfNeeded()
+        placeWebContent()
+    }
+
+    private func placeWebContent() {
+        guard let view = pane.activeWebView, bounds.width > 0 else { return }
+        let displayed = pane.webContentSlot.convert(pane.webContentSlot.bounds, to: self)
+        guard displayed.width > 0, displayed.height > 0 else { return }
+        let zoom = displayed.width / CGFloat(pane.viewport.rawValue)
+        // Redundant assignments can cause sixteen remote page layout/paint
+        // commits even when no window or viewport geometry changed.
+        if view.frame != displayed { view.frame = displayed }
+        if abs(view.pageZoom - zoom) > 0.000001 { view.pageZoom = zoom }
     }
 }
 
@@ -34,7 +65,7 @@ final class ScaledBrowserTile: NSView {
 final class MobileBrowserGridView: NSView {
     override var isFlipped: Bool { true }
     private(set) var tiles: [ScaledBrowserTile] = []
-    var mode: BrowserGridMode = .twoRows { didSet { needsLayout = true } }
+    var mode: BrowserGridMode = .twoRows { didSet { if oldValue != mode { needsLayout = true } } }
     var onLayout: ((BrowserGridPlan) -> Void)?
     private(set) var plan = BrowserGridPlan(available: .zero, mode: .twoRows, paneCount: 0)
 

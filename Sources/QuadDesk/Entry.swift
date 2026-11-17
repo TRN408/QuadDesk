@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import QuadCore
 
 @main
 struct QuadDeskMain {
@@ -17,7 +18,12 @@ if CommandLine.arguments.contains("--diagnostics") {
 } else {
     let application = NSApplication.shared
     if CommandLine.arguments.contains("--mobile-browser") {
-        let delegate = MobileBrowserApp()
+        let args = CommandLine.arguments
+        let initialURLs = args.indices.compactMap { index -> URL? in
+            guard args[index] == "--browser-url", index + 1 < args.count else { return nil }
+            return BrowserAddress.resolve(args[index + 1])
+        }
+        let delegate = MobileBrowserApp(initialURLs: initialURLs)
         application.delegate = delegate
         withExtendedLifetime(delegate) { application.run() }
         return

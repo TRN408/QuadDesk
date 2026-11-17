@@ -119,3 +119,11 @@ links and extensions are not supported. See [Privacy](PRIVACY.md).
 
 Run `./dist/QuadDesk.app/Contents/MacOS/QuadDesk --mobile-browser` for browser-only
 mode, without Screen Recording/Accessibility permission or display changes.
+
+
+The performance branch renders each WebKit view at its displayed size and uses
+native page zoom to retain the original CSS viewport. Blank cells do not start
+WebKit, unchanged layouts are skipped, URL loads start at most two at a time,
+and audio/video need a user play action. All loaded pages continue updating.
+These changes reduce unnecessary work; sixteen rich sites still need memory
+for sixteen independent documents and scripts.
