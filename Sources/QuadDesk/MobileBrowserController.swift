@@ -5,19 +5,21 @@ import QuadCore
 /// Independent of the display/AX session. Every column owns a real, live web view.
 @MainActor
 final class MobileBrowserController: NSObject, NSWindowDelegate {
-    static let maximumPanes = 6
+    static let maximumPanes = BrowserGridPlan.maximumPanes
     private(set) var panes: [MobileBrowserPane] = []
     private(set) var window: NSWindow?
-    let columns = NSStackView()
-    let scroll = NSScrollView()
+    let grid = MobileBrowserGridView()
     private let addButton = NSButton(title: "タブを追加", target: nil, action: nil)
     private let count = NSTextField(labelWithString: "")
-    // Same store for all columns and future windows. Safari/Chrome stores are separate.
+    private let mode = NSPopUpButton()
     private let dataStore: WKWebsiteDataStore
+    private let paneLimit: Int
 
-    init(dataStore: WKWebsiteDataStore? = nil) {
+    init(dataStore: WKWebsiteDataStore? = nil, paneLimit: Int = BrowserGridPlan.maximumPanes) {
         self.dataStore = dataStore ?? .default()
+        self.paneLimit = max(1, min(Self.maximumPanes, paneLimit))
         super.init()
+        grid.onLayout = { [weak self] plan in self?.updateControls(plan: plan) }
     }
 
     func installMenu() {
@@ -26,7 +28,6 @@ final class MobileBrowserController: NSObject, NSWindowDelegate {
         let menu = NSMenu(title: "ブラウザ")
         menu.addItem(withTitle: "モバイルブラウザを開く", action: #selector(show), keyEquivalent: "b").target = self
         item.submenu = menu; root.addItem(item)
-        // NSTextField and WebKit use the responder chain for clipboard/undo commands.
         if !root.items.contains(where: { $0.title == "編集" }) {
             let edit = NSMenuItem(title: "編集", action: nil, keyEquivalent: "")
             let actions = NSMenu(title: "編集")
@@ -46,52 +47,42 @@ final class MobileBrowserController: NSObject, NSWindowDelegate {
     }
 
     private func createWindow() {
-        let area = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1280, height: 800)
-        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: min(1240, area.width - 40), height: min(820, area.height - 60)),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        let area = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 875)
+        let window = NSWindow(contentRect: area, styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         self.window = window
-        window.title = "QuadDesk — モバイルブラウザ"
-        window.contentMinSize = CGSize(width: 480, height: 400)
+        window.setFrame(area, display: false)
+        window.title = "QuadDesk — モバイル画面分割"
+        window.contentMinSize = CGSize(width: 600, height: 400)
         window.isReleasedWhenClosed = false; window.delegate = self
-        window.center()
         let content = NSView(); window.contentView = content
-        let title = NSTextField(labelWithString: "モバイルブラウザ")
-        title.font = .systemFont(ofSize: 17, weight: .semibold)
-        count.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        let title = NSTextField(labelWithString: "モバイル画面分割")
+        title.font = .systemFont(ofSize: 13, weight: .semibold)
+        count.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         count.textColor = .secondaryLabelColor
         addButton.target = self; addButton.action = #selector(addAction); addButton.bezelStyle = .rounded
+        mode.addItems(withTitles: BrowserGridMode.allCases.map(\.title))
+        mode.target = self; mode.action = #selector(gridModeChanged)
+        mode.setAccessibilityLabel("画面分割の配置")
+        let fill = NSButton(title: "入るだけ追加", target: self, action: #selector(fillAction))
+        fill.bezelStyle = .rounded
         let spacer = NSView(); spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let toolbar = NSStackView(views: [title, count, spacer, addButton]); toolbar.spacing = 12
-        let note = NSTextField(wrappingLabelWithString: "URLを入力して並列表示。横に収まらないタブは横スクロールできます。ログインはQuadDesk専用です。")
-        note.font = .systemFont(ofSize: 12); note.textColor = .secondaryLabelColor
-        columns.orientation = .horizontal; columns.alignment = .top; columns.spacing = 12
-        columns.translatesAutoresizingMaskIntoConstraints = false
-        let document = NSView(); document.translatesAutoresizingMaskIntoConstraints = false
-        scroll.documentView = document; scroll.hasHorizontalScroller = true
-        scroll.hasVerticalScroller = false; scroll.autohidesScrollers = false
-        scroll.drawsBackground = true; scroll.backgroundColor = .windowBackgroundColor
-        document.addSubview(columns)
-        for view in [toolbar, note, scroll] { view.translatesAutoresizingMaskIntoConstraints = false; content.addSubview(view) }
+        let toolbar = NSStackView(views: [title, mode, count, spacer, fill, addButton]); toolbar.spacing = 8
+        for view in [toolbar, grid] { view.translatesAutoresizingMaskIntoConstraints = false; content.addSubview(view) }
         NSLayoutConstraint.activate([
-            toolbar.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 16),
-            toolbar.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -16),
-            toolbar.topAnchor.constraint(equalTo: content.topAnchor, constant: 12),
-            note.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor), note.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor),
-            note.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 8),
-            scroll.topAnchor.constraint(equalTo: note.bottomAnchor, constant: 12),
-            scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            document.heightAnchor.constraint(equalTo: scroll.contentView.heightAnchor),
-            columns.leadingAnchor.constraint(equalTo: document.leadingAnchor, constant: 16),
-            columns.trailingAnchor.constraint(equalTo: document.trailingAnchor, constant: -16),
-            columns.topAnchor.constraint(equalTo: document.topAnchor), columns.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: -8)
+            toolbar.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 8),
+            toolbar.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -8),
+            toolbar.topAnchor.constraint(equalTo: content.topAnchor, constant: 6),
+            grid.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 6),
+            grid.leadingAnchor.constraint(equalTo: content.leadingAnchor), grid.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            grid.bottomAnchor.constraint(equalTo: content.bottomAnchor)
         ])
-        for _ in 0..<3 { _ = addPane() }
+        content.layoutSubtreeIfNeeded()
+        fillAction()
     }
 
     @discardableResult
     func addPane(configuration: WKWebViewConfiguration? = nil) -> MobileBrowserPane? {
-        guard panes.count < Self.maximumPanes else { return nil }
+        guard panes.count < paneLimit else { return nil }
         let config = configuration ?? WKWebViewConfiguration()
         if configuration == nil { config.websiteDataStore = dataStore }
         let pane = MobileBrowserPane(configuration: config)
@@ -99,34 +90,40 @@ final class MobileBrowserController: NSObject, NSWindowDelegate {
             guard let self, let pane else { return }; self.removePane(pane)
         }
         pane.onNewWindow = { [weak self] config in self?.addPane(configuration: config)?.webView }
-        panes.append(pane); columns.addArrangedSubview(pane)
-        pane.heightAnchor.constraint(equalTo: columns.heightAnchor).isActive = true
-        updateControls()
+        pane.onViewportChanged = { [weak self] in self?.grid.needsLayout = true }
+        panes.append(pane); grid.add(pane); updateControls(plan: grid.plan)
         return pane
     }
 
     func removePane(_ pane: MobileBrowserPane) {
         guard panes.contains(where: { $0 === pane }) else { return }
-        pane.dispose(); columns.removeArrangedSubview(pane); pane.removeFromSuperview()
-        panes.removeAll { $0 === pane }; updateControls()
+        pane.dispose(); grid.remove(pane); pane.removeFromSuperview()
+        panes.removeAll { $0 === pane }; updateControls(plan: grid.plan)
     }
 
     @objc private func addAction() {
         guard let pane = addPane() else { return }
         window?.contentView?.layoutSubtreeIfNeeded()
-        pane.scrollToVisible(pane.bounds)
         window?.makeFirstResponder(pane.address)
     }
-
-    private func updateControls() {
-        count.stringValue = "\(panes.count) / \(Self.maximumPanes) タブ"
-        addButton.isEnabled = panes.count < Self.maximumPanes
+    @objc private func gridModeChanged() {
+        grid.mode = BrowserGridMode.allCases[mode.indexOfSelectedItem]
+        grid.layoutSubtreeIfNeeded()
     }
-
+    @objc private func fillAction() {
+        let plan = BrowserGridPlan(available: grid.bounds.size, mode: grid.mode, paneCount: panes.count)
+        let target = min(paneLimit, plan.recommendedCapacity)
+        while panes.count < target { _ = addPane() }
+        grid.needsLayout = true; grid.layoutSubtreeIfNeeded()
+    }
+    private func updateControls(plan: BrowserGridPlan) {
+        let text = "\(plan.rows)段 × \(plan.columns)列 · \(Int(plan.scale * 100))% · \(panes.count)画面"
+        if count.stringValue != text { count.stringValue = text }
+        addButton.isEnabled = panes.count < paneLimit
+    }
     func windowWillClose(_ notification: Notification) { close() }
-
     func close() {
-        for pane in panes { pane.dispose(); columns.removeArrangedSubview(pane); pane.removeFromSuperview() }
+        for pane in panes { pane.dispose(); grid.remove(pane); pane.removeFromSuperview() }
         panes.removeAll()
         window?.delegate = nil; window?.orderOut(nil); window = nil
     }
@@ -145,6 +142,7 @@ final class MobileBrowserPane: NSView, WKNavigationDelegate, WKUIDelegate {
     private var width: NSLayoutConstraint!
     private var observations: [NSKeyValueObservation] = []
     var onClose: (() -> Void)?
+    var onViewportChanged: (() -> Void)?
     var onNewWindow: ((WKWebViewConfiguration) -> WKWebView?)?
     private var disposed = false
 
@@ -153,7 +151,7 @@ final class MobileBrowserPane: NSView, WKNavigationDelegate, WKUIDelegate {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true; layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
-        layer?.cornerRadius = 8
+        layer?.cornerRadius = 0
         webView.navigationDelegate = self; webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
         heading.font = .systemFont(ofSize: 12, weight: .medium)
@@ -240,6 +238,7 @@ final class MobileBrowserPane: NSView, WKNavigationDelegate, WKUIDelegate {
         webView.customUserAgent = viewport.isMobile
             ? "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
             : nil
+        onViewportChanged?()
         if reloadPage, webView.url != nil { webView.reload() }
     }
     @objc private func viewportChanged() { applyViewport(MobileViewport.allCases[mode.indexOfSelectedItem]) }
@@ -326,7 +325,7 @@ final class MobileBrowserPane: NSView, WKNavigationDelegate, WKUIDelegate {
     func dispose() {
         disposed = true; observations.removeAll()
         webView.stopLoading(); webView.navigationDelegate = nil; webView.uiDelegate = nil
-        webView.removeFromSuperview(); onClose = nil; onNewWindow = nil
+        webView.removeFromSuperview(); onClose = nil; onNewWindow = nil; onViewportChanged = nil
     }
 }
 

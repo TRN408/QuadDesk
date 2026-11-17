@@ -5,7 +5,7 @@ physical input or display recovery on a different Mac.
 
 ## Automated checks
 
-- 77 Swift tests: layout, window identity, recovery records, capture/input
+- 80 Swift tests: layout, window identity, recovery records, capture/input
   regression behavior, watchdog leases, expansion detection, setup readiness,
   actual setup construction, width-constrained scrolling at 600×300, and bounded
   preparation/visible preview watchdog phases.
@@ -59,16 +59,18 @@ The added `MobileBrowserTests` cover URL resolution (including local HTTP,
 IPv6 and rejection of script/file/credential URLs) and viewport choices.
 `MobileBrowserUITests` create real WebKit views with a non-persistent store to
 check exact CSS widths, responsive media queries, mobile user agent, independent
-page timers/content, shared cookies, the six-column limit and close cleanup.
+page timers/content, shared cookies, the configured pane limit, fixed viewport under grid resizing, scaled native
+hit testing and close cleanup. `BrowserGridTests` cover fitting, aspect ratio,
+zero gutters and retaining all pages in a smaller window.
 These tests do not use personal browser data, public sites or display mutation.
 
 Serve `Tests/Fixtures/MobileBrowserProbe.html` on localhost as described in the
 [fixture instructions](../Tests/Fixtures/README.md) for interactive validation.
 Check each of the following in a browser-only app instance:
 
-- Three initial columns; add/close columns, including the last one; maximum six.
+- A screen-filling two-row grid; add/close panes, including the last one; maximum 64.
 - Load the fixture in two columns. Both counters advance; input stays independent.
-- 320/390/430 CSS widths and media queries, desktop mode and horizontal overflow.
+- 320/390/430 CSS widths and media queries, desktop mode and proportional grid fitting.
 - URL editing, keyboard focus, paste/copy, Japanese input, page scrolling.
 - Back/forward, reload/stop, new-window links and JavaScript dialogs.
 - Invalid URLs and unreachable servers give a recoverable status.

@@ -9,10 +9,10 @@ final class MobileBrowserUITests: XCTestCase {
     func testPaneLimitRemovalAndIsolatedTestingStore() {
         _ = NSApplication.shared
         let store = WKWebsiteDataStore.nonPersistent()
-        let browser = MobileBrowserController(dataStore: store)
+        let browser = MobileBrowserController(dataStore: store, paneLimit: 6)
         for _ in 0..<6 { XCTAssertNotNil(browser.addPane()) }
         XCTAssertNil(browser.addPane())
-        XCTAssertEqual(browser.columns.arrangedSubviews.count, 6)
+        XCTAssertEqual(browser.grid.tiles.count, 6)
         XCTAssertTrue(browser.panes.allSatisfy { $0.webView.configuration.websiteDataStore === store })
         let removed = browser.panes[0]
         browser.removePane(removed)
@@ -21,7 +21,7 @@ final class MobileBrowserUITests: XCTestCase {
         XCTAssertNotNil(browser.addPane())
         browser.close()
         XCTAssertTrue(browser.panes.isEmpty)
-        XCTAssertTrue(browser.columns.arrangedSubviews.isEmpty)
+        XCTAssertTrue(browser.grid.tiles.isEmpty)
     }
 
     @MainActor
@@ -31,15 +31,9 @@ final class MobileBrowserUITests: XCTestCase {
         let first = try XCTUnwrap(browser.addPane())
         let second = try XCTUnwrap(browser.addPane())
         defer { browser.close() }
-        let host = NSView(frame: CGRect(x: 0, y: 0, width: 900, height: 700))
-        // No visible window or permissions. Real WebKit processes render the pages.
-        host.addSubview(browser.columns)
-        browser.columns.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            browser.columns.leadingAnchor.constraint(equalTo: host.leadingAnchor),
-            browser.columns.topAnchor.constraint(equalTo: host.topAnchor),
-            browser.columns.heightAnchor.constraint(equalToConstant: 680)
-        ])
+        // Offscreen: exercise the same scaled NSView hierarchy as the real app.
+        let host = browser.grid
+        host.frame = CGRect(x: 0, y: 0, width: 900, height: 700)
         first.applyViewport(.compact, reloadPage: false)
         second.applyViewport(.wide, reloadPage: false)
         host.layoutSubtreeIfNeeded()
@@ -63,6 +57,24 @@ final class MobileBrowserUITests: XCTestCase {
         let secondWidth = try await second.webView.evaluateJavaScript("window.innerWidth") as? Int
         XCTAssertEqual(firstWidth, 320)
         XCTAssertEqual(secondWidth, 430)
+        let oldHeight = try await first.webView.evaluateJavaScript("window.innerHeight") as? Int
+        let logicalSize = first.frame.size
+        host.frame.size = CGSize(width: 1440, height: 800)
+        host.needsLayout = true; host.layoutSubtreeIfNeeded()
+        let resizedWidth = try await first.webView.evaluateJavaScript("window.innerWidth") as? Int
+        let resizedHeight = try await first.webView.evaluateJavaScript("window.innerHeight") as? Int
+        XCTAssertEqual(resizedWidth, firstWidth)
+        XCTAssertEqual(first.frame.size, logicalSize)
+        // AppKit can align a fractional-height viewport by one CSS pixel at a
+        // different backing scale. The logical canvas itself must stay exact.
+        XCTAssertEqual(Double(try XCTUnwrap(resizedHeight)), Double(try XCTUnwrap(oldHeight)), accuracy: 1)
+        let tile = try XCTUnwrap(browser.grid.tiles.first)
+        // hitTest takes a point in the receiver's *superview* coordinates.
+        let point = first.webView.convert(CGPoint(x: 30, y: 30), to: host.superview)
+        let target = host.hitTest(point)
+        XCTAssertTrue(target === first.webView || target?.isDescendant(of: first.webView) == true,
+                      "hit=\(String(describing: target)) point=\(point) tile=\(tile.frame)/\(tile.bounds) pane=\(first.frame) web=\(first.webView.frame)")
+        XCTAssertLessThan(tile.frame.width, tile.bounds.width)
         let responsive = try await first.webView.evaluateJavaScript("matchMedia('(max-width:350px)').matches") as? Bool
         XCTAssertEqual(responsive, true)
         let ua = try await first.webView.evaluateJavaScript("navigator.userAgent") as? String

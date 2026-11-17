@@ -101,10 +101,13 @@ license notices. See [third-party notices](THIRD_PARTY_NOTICES.md).
 
 ## Mobile browser (unreleased on this branch)
 
-Open **モバイルブラウザを開く** from setup or the Browser menu. Three independent
-live WebKit columns open initially; add up to six. Each has its own URL field,
+Open **モバイルブラウザを開く** from setup or the Browser menu. The window fills the current screen and initially
+fills a two-row grid with live WebKit views. Each has its own URL field,
 back/forward, reload/stop and close controls. Choose 320, 390 or 430 CSS points,
-or desktop width (1024). Overflow scrolls horizontally without shrinking text.
+or desktop width (1024). The entire 390×844 browser canvas is uniformly
+reduced to fit, with no gutters between tiles. Page CSS dimensions and the
+canvas aspect ratio stay fixed when resizing the window. A remainder may remain
+at the outer edge. Existing pages are retained when resizing; add up to 64.
 Changing width reloads that page. New-window links open in a new column if one
 is available. The mobile user agent requests mobile site variants; this is
 macOS WebKit, not iOS or touch emulation. Site compatibility varies.
