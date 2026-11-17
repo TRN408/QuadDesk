@@ -120,8 +120,8 @@ final class MobileBrowserUITests: XCTestCase {
         XCTAssertEqual(firstWidth, 320)
         XCTAssertEqual(secondWidth, 430)
         let oldHeight = try await first.webView.evaluateJavaScript("window.innerHeight") as? Int
-        let oldZoom = first.webView.pageZoom
-        let oldNativeHeight = first.webView.bounds.height
+        let oldZoom = Double(first.webView.pageZoom)
+        let oldNativeHeight = Double(first.webView.bounds.height)
         let logicalSize = first.frame.size
         host.frame.size = CGSize(width: 1440, height: 800)
         host.needsLayout = true; host.layoutSubtreeIfNeeded()
@@ -135,12 +135,13 @@ final class MobileBrowserUITests: XCTestCase {
         // fractional view sizes and reports integer innerHeight. Allow one
         // display point plus one CSS pixel per layout, rather than fixing a
         // CSS tolerance to this development Mac's Retina scale.
-        let roundingBudget = 2 + 1 / oldZoom + 1 / first.webView.pageZoom
+        let newZoom = Double(first.webView.pageZoom)
+        let roundingBudget = 2 + 1 / oldZoom + 1 / newZoom
         XCTAssertEqual(Double(try XCTUnwrap(resizedHeight)), Double(try XCTUnwrap(oldHeight)),
                        accuracy: roundingBudget)
         XCTAssertEqual(Double(try XCTUnwrap(oldHeight)) * oldZoom, oldNativeHeight, accuracy: 1 + oldZoom)
-        XCTAssertEqual(Double(try XCTUnwrap(resizedHeight)) * first.webView.pageZoom,
-                       first.webView.bounds.height, accuracy: 1 + first.webView.pageZoom)
+        XCTAssertEqual(Double(try XCTUnwrap(resizedHeight)) * newZoom,
+                       Double(first.webView.bounds.height), accuracy: 1 + newZoom)
         let tile = try XCTUnwrap(browser.grid.tiles.first)
         // hitTest takes a point in the receiver's *superview* coordinates.
         let point = first.webView.convert(CGPoint(x: 30, y: 30), to: host.superview)
