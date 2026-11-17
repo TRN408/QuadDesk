@@ -86,6 +86,7 @@ final class MobileBrowserUITests: XCTestCase {
         let cookies = await second.webView.configuration.websiteDataStore.httpCookieStore.allCookies()
         XCTAssertTrue(cookies.contains { $0.name == "probe" && $0.value == "shared" })
         first.applyViewport(.desktop, reloadPage: false)
-        XCTAssertNil(first.webView.customUserAgent)
+        let desktopAgent = try await first.webView.evaluateJavaScript("navigator.userAgent") as? String
+        XCTAssertFalse(try XCTUnwrap(desktopAgent).contains("iPhone"))
     }
 }

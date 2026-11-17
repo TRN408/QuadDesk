@@ -5,7 +5,7 @@ physical input or display recovery on a different Mac.
 
 ## Automated checks
 
-- 72 Swift tests: layout, window identity, recovery records, capture/input
+- 77 Swift tests: layout, window identity, recovery records, capture/input
   regression behavior, watchdog leases, expansion detection, setup readiness,
   actual setup construction, width-constrained scrolling at 600×300, and bounded
   preparation/visible preview watchdog phases.
