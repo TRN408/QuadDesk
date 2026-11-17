@@ -42,6 +42,7 @@ def main():
             'CFBundleName': 'QuadDesk', 'CFBundleDisplayName': 'QuadDesk',
             'CFBundlePackageType': 'APPL', 'CFBundleShortVersionString': '0.7.10',
             'CFBundleVersion': '32', 'LSMinimumSystemVersion': '14.0',
+            'NSAppTransportSecurity': {'NSAllowsArbitraryLoadsInWebContent': True},
             'NSHighResolutionCapable': True, 'NSPrincipalClass': 'NSApplication',
             'QuadDeskNativeWindowsPreview': True,
             'NSScreenCaptureUsageDescription': 'Enumerate selected windows for the four-app workspace. No video is saved or sent.',

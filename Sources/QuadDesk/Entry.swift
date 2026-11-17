@@ -16,6 +16,12 @@ if CommandLine.arguments.contains("--diagnostics") {
     print(String(decoding: data, as: UTF8.self))
 } else {
     let application = NSApplication.shared
+    if CommandLine.arguments.contains("--mobile-browser") {
+        let delegate = MobileBrowserApp()
+        application.delegate = delegate
+        withExtendedLifetime(delegate) { application.run() }
+        return
+    }
     if Bundle.main.object(forInfoDictionaryKey: "QuadDeskLegacyCapture") as? Bool != true {
         let controller = NativeWindowsController()
         application.delegate = controller.host

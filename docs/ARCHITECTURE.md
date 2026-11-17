@@ -22,3 +22,13 @@ are app/session scoped, not permanent settings.
 mutation. Legacy capture/input sources remain for regression research, but are
 not the packaged native app's entry path. Optional fixtures are separate from
 the runtime. API references and licenses are in THIRD_PARTY_NOTICES.md.
+
+
+The optional `MobileBrowserController` owns an ordinary resizable AppKit window
+with horizontally scrolling, fixed-width `WKWebView` columns. It does not use
+capture, synthetic input, AX, virtual displays or the watchdog. Each column has
+native WebKit navigation and input; the default website data store is shared
+and persistent. Mobile widths use a mobile user agent; desktop mode resets it.
+`--mobile-browser` uses a separate app delegate that bypasses native workspace
+setup and permission checks. HTTP is allowed only in web content by the bundle's
+ATS configuration so user-entered local/intranet HTTP pages can load.

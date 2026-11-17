@@ -11,6 +11,7 @@ import OSLog
 @MainActor
 final class NativeWindowsController: NSObject {
     let host = NativeDisplayApp()
+    private let mobileBrowser = MobileBrowserController()
     private var popups: [NSPopUpButton] = []
     private var candidates: [Candidate] = []
     private var sources: [(Int, SourceWindow)] = []
@@ -58,6 +59,10 @@ final class NativeWindowsController: NSObject {
     }
 
     private func configure(_ stack: NSStackView) {
+        mobileBrowser.installMenu()
+        let browserButton = NSButton(title: "モバイルブラウザを開く", target: mobileBrowser, action: #selector(MobileBrowserController.show))
+        browserButton.bezelStyle = .rounded
+        stack.addArrangedSubview(browserButton)
         let location = NSTextField(wrappingLabelWithString: "")
         let path = Bundle.main.bundleURL.standardizedFileURL.path
         let userApps = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications").path + "/"

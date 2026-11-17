@@ -18,6 +18,7 @@ def check(app):
     assert info['CFBundleShortVersionString'] == '0.7.10'
     assert info['CFBundleVersion'] == '32'
     assert info['QuadDeskNativeWindowsPreview'] is True
+    assert info['NSAppTransportSecurity'] == {'NSAllowsArbitraryLoadsInWebContent': True}
     subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict', str(app)], check=True)
     signature = subprocess.run(['/usr/bin/codesign', '-d', '--verbose=4', str(app)], capture_output=True, text=True, check=True).stderr
     if os.environ.get('QUADDESK_SIGN_IDENTITY', '-') == '-':
