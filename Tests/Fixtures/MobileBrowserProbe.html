@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QuadDesk mobile probe</title>
+<style>
+  :root { font: 16px -apple-system, sans-serif; color: #17343c; background: #e9f1f2; }
+  body { margin: 0; } header, main { padding: 24px; } header { background: #d1e5e7; }
+  h1 { font-size: 26px; letter-spacing: -.03em; margin: 10px 0; }
+  small { font: 12px ui-monospace, monospace; } output { font: 30px ui-monospace, monospace; display: block; }
+  label { display: block; margin: 20px 0 8px; }
+  input, textarea { font: inherit; box-sizing: border-box; width: 100%; padding: 10px; }
+  textarea { min-height: 120px; } button, a { display: inline-block; margin: 12px 6px 12px 0; }
+  button { padding: 8px; } .space { margin-top: 400px; } #compact { display: none; }
+  @media(max-width:350px) { #compact { display: block; } h1 { font-size: 23px; } }
+</style>
+<header><small>QUADDESK / LIVE WEBKIT PROBE</small><h1>モバイルで、並べて使う。</h1><output id="size"></output><p id="compact">320px用のレイアウト</p></header>
+<main>
+  <p>ライブ更新：<strong id="ticks">0</strong></p>
+  <label for="entry">入力・日本語変換の確認</label><input id="entry" placeholder="このタブだけに入力">
+  <label for="notes">スクロール・選択・コピー</label><textarea id="notes">WebKitの標準入力を使います。</textarea>
+  <a href="?page=next">次のページ（履歴）</a><a href="?page=popup" target="_blank">新しいタブ</a>
+  <button onclick="document.getElementById('result').textContent=confirm('確認ダイアログ')?'OK':'キャンセル'">確認</button>
+  <button onclick="alert('このタブの通知です')">通知</button>
+  <p id="result"></p><p id="ua"></p>
+  <p class="space">ページ下部までスクロールできました。</p>
+</main>
+<script>
+let ticks=0;
+setInterval(()=>document.getElementById('ticks').textContent=++ticks,200);
+const size=()=>document.getElementById('size').textContent=`${innerWidth} × ${innerHeight}`;
+size(); addEventListener('resize',size);
+document.getElementById('ua').textContent=navigator.userAgent.includes('iPhone')?'モバイル用User-Agent':'PC用User-Agent';
+</script>
+</html>

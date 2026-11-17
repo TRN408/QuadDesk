@@ -98,3 +98,32 @@ part of the publication.
 
 MIT: use, modify and redistribute, including commercially, while preserving the
 license notices. See [third-party notices](THIRD_PARTY_NOTICES.md).
+
+## Mobile browser (unreleased on this branch)
+
+Open **モバイルブラウザを開く** from setup or the Browser menu. The window fills the current screen and initially
+fills a two-row grid with live WebKit views. Each has its own URL field,
+back/forward, reload/stop and close controls. Choose 320, 390 or 430 CSS points,
+or desktop width (1024). The entire 390×844 browser canvas is uniformly
+reduced to fit, with no gutters between tiles. Page CSS dimensions and the
+canvas aspect ratio stay fixed when resizing the window. A remainder may remain
+at the outer edge. Existing pages are retained when resizing; add up to 64.
+Changing width reloads that page. New-window links open in a new column if one
+is available. The mobile user agent requests mobile site variants; this is
+macOS WebKit, not iOS or touch emulation. Site compatibility varies.
+
+All columns share a persistent QuadDesk website data store, separate from
+Safari/Chrome. Existing browser logins are not imported. Closing the browser
+releases its pages; tab URLs/layout are not restored. Downloads, external-app
+links and extensions are not supported. See [Privacy](PRIVACY.md).
+
+Run `./dist/QuadDesk.app/Contents/MacOS/QuadDesk --mobile-browser` for browser-only
+mode, without Screen Recording/Accessibility permission or display changes.
+
+
+The performance branch renders each WebKit view at its displayed size and uses
+native page zoom to retain the original CSS viewport. Blank cells do not start
+WebKit, unchanged layouts are skipped, URL loads start at most two at a time,
+and audio/video need a user play action. All loaded pages continue updating.
+These changes reduce unnecessary work; sixteen rich sites still need memory
+for sixteen independent documents and scripts.

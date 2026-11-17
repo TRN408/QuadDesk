@@ -7,13 +7,24 @@ final class SetupConstructionTests: XCTestCase {
     @MainActor
     func testSmallSetupViewWrapsTextAndScrollsToTheLastControl() {
         _ = NSApplication.shared
+        for style in [NSScroller.Style.overlay, .legacy] {
+            checkSmallSetupView(scrollerStyle: style)
+        }
+    }
+    @MainActor
+    private func checkSmallSetupView(scrollerStyle: NSScroller.Style) {
         let text = NSTextField(wrappingLabelWithString: String(repeating: "Permission setup and window restoration. ", count: 50))
         let button = NSButton(title: "Start preview", target: nil, action: nil)
         let stack = NSStackView(views: [text, button])
         stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 14
         text.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         let scroll = SetupScrollView(stack: stack)
+        scroll.scrollerStyle = scrollerStyle
         scroll.frame = CGRect(x: 0, y: 0, width: 600, height: 300)
+        scroll.layoutSubtreeIfNeeded()
+        // A legacy scroller consumes width when tiling the clip view. Settle
+        // that clip view's constraints before inspecting the document size.
+        scroll.contentView.layoutSubtreeIfNeeded()
         scroll.layoutSubtreeIfNeeded()
         guard let document = scroll.documentView else { return XCTFail("Missing document") }
         XCTAssertEqual(document.frame.width, scroll.contentView.bounds.width, accuracy: 1)

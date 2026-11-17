@@ -11,6 +11,7 @@ flags=(--scratch-path "$build_dir" -c release
        -Xswiftc -debug-prefix-map -Xswiftc "$mapping"
        -Xswiftc -file-prefix-map -Xswiftc "$mapping"
        -Xcc "-fdebug-prefix-map=$mapping" -Xcc "-ffile-prefix-map=$mapping")
+if [[ -n "${QUADDESK_BUILD_JOBS:-}" ]]; then flags+=(--jobs "$QUADDESK_BUILD_JOBS"); fi
 swift build "${flags[@]}" --product QuadDisplayWatchdog
 swift build "${flags[@]}" --product QuadDesk
 python3 scripts/package.py "$build_dir/release/QuadDesk" "$app_dir"

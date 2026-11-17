@@ -5,7 +5,7 @@ physical input or display recovery on a different Mac.
 
 ## Automated checks
 
-- 72 Swift tests: layout, window identity, recovery records, capture/input
+- 86 Swift tests: layout, window identity, recovery records, capture/input
   regression behavior, watchdog leases, expansion detection, setup readiness,
   actual setup construction, width-constrained scrolling at 600×300, and bounded
   preparation/visible preview watchdog phases.
@@ -52,3 +52,46 @@ start work mode, and press its green button. Verify normal display scale and the
 same readable text size, return to four windows, and repeat with ordinary zoom.
 Quit QuadDesk and verify the original display and window positions. Close only
 the test window. Do not use personal messages or production documents for test input.
+
+## Mobile browser validation (unreleased branch)
+
+The added `MobileBrowserTests` cover URL resolution (including local HTTP,
+IPv6 and rejection of script/file/credential URLs) and viewport choices.
+`MobileBrowserUITests` create real WebKit views with a non-persistent store to
+check exact CSS widths, responsive media queries, mobile user agent, independent
+page timers/content, shared cookies, the configured pane limit, fixed viewport under grid resizing, scaled native
+hit testing and close cleanup. `BrowserGridTests` cover fitting, aspect ratio,
+zero gutters and retaining all pages in a smaller window.
+These tests do not use personal browser data, public sites or display mutation.
+
+Serve `Tests/Fixtures/MobileBrowserProbe.html` on localhost as described in the
+[fixture instructions](../Tests/Fixtures/README.md) for interactive validation.
+Check each of the following in a browser-only app instance:
+
+- A screen-filling two-row grid; add/close panes, including the last one; maximum 64.
+- Load the fixture in two columns. Both counters advance; input stays independent.
+- 320/390/430 CSS widths and media queries, desktop mode and proportional grid fitting.
+- URL editing, keyboard focus, paste/copy, Japanese input, page scrolling.
+- Back/forward, reload/stop, new-window links and JavaScript dialogs.
+- Invalid URLs and unreachable servers give a recoverable status.
+- Close/reopen the browser window, then quit; no validation app/server remains.
+
+Real website compatibility, authentication providers, restart-persistent logins,
+physical IME operation, long sessions and sleep/wake require separate manual
+checks. The mobile user agent does not prove iOS or touch compatibility.
+
+
+## Sixteen-pane resource regression
+
+The performance branch keeps all sixteen loaded pages alive. Tests verify their
+independent timers/content, a native-sized WebKit surface with the original CSS
+viewport/media queries, no WebKit allocation for sixteen empty cells, no repeated
+placement for unchanged geometry, and a two-slot URL navigation queue with
+replacement/cancellation/stale completion handling. Audio/video require a user
+play action. The command line accepts repeated `--browser-url URL` arguments to
+restore explicitly supplied URLs; it does not scrape browser profiles or save a
+browsing history.
+
+`QUADDESK_BUILD_JOBS=2` bounds build concurrency for this 8 GB development Mac.
+A smaller render target is not a promise that JavaScript heaps shrink equally:
+real websites, video policy, user content and other running apps still matter.

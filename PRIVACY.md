@@ -1,8 +1,18 @@
 # Privacy
 
-The default native version has no network client, analytics, account system or
-update service. It does not save video, audio or typed content. Input goes to
-the original Mac apps; QuadDesk does not forward or record their keystrokes.
+The four-app workspace has no analytics, QuadDesk account system or update
+service. It does not save video, audio or typed content. Input goes to the
+original Mac apps; QuadDesk does not forward or record their keystrokes.
+
+The optional mobile browser loads websites directly with macOS WebKit. Those
+sites receive normal browser requests and any information you enter into them.
+All columns share WebKit's persistent default website data store: cookies,
+logins, caches and site storage can remain on this Mac after closing the app.
+This store is separate from Safari/Chrome and is not copied from those browsers.
+QuadDesk does not save a separate browsing history or tab URL list. Closing a
+column stops its page; closing the browser window releases all its web views.
+Browser-only mode (`--mobile-browser`) needs no Screen Recording or
+Accessibility permission and makes no display or other-app window changes.
 
 Screen Recording is used to enumerate shareable windows. Accessibility is used
 to identify, focus, resize and normalize the selected windows. The default app
