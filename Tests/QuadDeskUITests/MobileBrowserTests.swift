@@ -122,6 +122,7 @@ final class MobileBrowserUITests: XCTestCase {
         let oldHeight = try await first.webView.evaluateJavaScript("window.innerHeight") as? Int
         let oldZoom = first.webView.pageZoom
         let oldNativeHeight = first.webView.bounds.height
+        let oldLogicalContentHeight = first.webContentSlot.bounds.height
         let logicalSize = first.frame.size
         host.frame.size = CGSize(width: 1440, height: 800)
         host.needsLayout = true; host.layoutSubtreeIfNeeded()
@@ -132,8 +133,7 @@ final class MobileBrowserUITests: XCTestCase {
         // The logical content height stays fixed. WebKit aligns its displayed
         // viewport to device pixels: at a small zoom, one display pixel spans
         // several CSS pixels, especially on a 1x CI display.
-        XCTAssertEqual(first.webView.bounds.height / first.webView.pageZoom,
-                       oldNativeHeight / oldZoom, accuracy: 0.01)
+        XCTAssertEqual(first.webContentSlot.bounds.height, oldLogicalContentHeight, accuracy: 0.01)
         XCTAssertEqual(Double(try XCTUnwrap(oldHeight)) * oldZoom, oldNativeHeight, accuracy: 1)
         XCTAssertEqual(Double(try XCTUnwrap(resizedHeight)) * first.webView.pageZoom,
                        first.webView.bounds.height, accuracy: 1)
