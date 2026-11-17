@@ -120,6 +120,8 @@ final class MobileBrowserUITests: XCTestCase {
         XCTAssertEqual(firstWidth, 320)
         XCTAssertEqual(secondWidth, 430)
         let oldHeight = try await first.webView.evaluateJavaScript("window.innerHeight") as? Int
+        let oldZoom = first.webView.pageZoom
+        let oldNativeHeight = first.webView.bounds.height
         let logicalSize = first.frame.size
         host.frame.size = CGSize(width: 1440, height: 800)
         host.needsLayout = true; host.layoutSubtreeIfNeeded()
@@ -127,9 +129,14 @@ final class MobileBrowserUITests: XCTestCase {
         let resizedHeight = try await first.webView.evaluateJavaScript("window.innerHeight") as? Int
         XCTAssertEqual(resizedWidth, firstWidth)
         XCTAssertEqual(first.frame.size, logicalSize)
-        // AppKit can align a fractional-height viewport by one CSS pixel at a
-        // different backing scale. The logical canvas itself must stay exact.
-        XCTAssertEqual(Double(try XCTUnwrap(resizedHeight)), Double(try XCTUnwrap(oldHeight)), accuracy: 1)
+        // The logical content height stays fixed. WebKit aligns its displayed
+        // viewport to device pixels: at a small zoom, one display pixel spans
+        // several CSS pixels, especially on a 1x CI display.
+        XCTAssertEqual(first.webView.bounds.height / first.webView.pageZoom,
+                       oldNativeHeight / oldZoom, accuracy: 0.01)
+        XCTAssertEqual(Double(try XCTUnwrap(oldHeight)) * oldZoom, oldNativeHeight, accuracy: 1)
+        XCTAssertEqual(Double(try XCTUnwrap(resizedHeight)) * first.webView.pageZoom,
+                       first.webView.bounds.height, accuracy: 1)
         let tile = try XCTUnwrap(browser.grid.tiles.first)
         // hitTest takes a point in the receiver's *superview* coordinates.
         let point = first.webView.convert(CGPoint(x: 30, y: 30), to: host.superview)
